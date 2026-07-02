@@ -101,13 +101,18 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
             passthrough_data=result.passthrough_data,
         )
 
-    # In case each pub is associated with several items - create a list with all
-    # relevant items for each pub
+    # In case each pub is associated with several items - create a list in which each element
+    # is a list containing all relevant items for that pub
     if item_id is not None:
         # in case of ZNE mitigation with gate folding - should use "combined_results"
         # object instead of the "results" object
         combined_results = []
+        skip_counter = 0
         for idx, item_result in enumerate(result):
+            # skip items relevant for the previous pub
+            if skip_counter > 0:
+                skip_counter -= 1
+                continue
             # each element in item_id has the format of (pub_number, relevant_noise_factor)
             pub_number = item_id[idx][0]
             pub_items_results = [item_result]
@@ -116,6 +121,7 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
                 if item[0] != pub_number:
                     break
                 pub_items_results.append(result[item_idx])
+                skip_counter += 1
             combined_results.append(pub_items_results)
 
     # Validate circuits_metadata length if provided
