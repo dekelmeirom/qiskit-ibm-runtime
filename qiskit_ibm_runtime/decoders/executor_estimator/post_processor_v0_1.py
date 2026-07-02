@@ -30,6 +30,7 @@ from qiskit.primitives.containers.estimator_pub import ObservablesArray
 from qiskit.quantum_info import Pauli
 
 from ...executor_estimator.utils import get_pauli_basis, unbroadcast_index
+from ...executor_estimator.zne.extrapolation import process_extrapolated_expectation_values
 from ...results.estimator_pub import EstimatorPubResult
 from ...results.quantum_program import QuantumProgramResult
 from .trex_utils import calculate_trex_factor, get_processed_calibration_data
@@ -100,21 +101,22 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
             passthrough_data=result.passthrough_data,
         )
 
-        # In case each pub is associated with several items - create a list with all
-        # relevant items for each pub
-        if item_id is not None:
-            combined_results = []
-            for idx, item_result in enumerate(result):
-                # each element in item_id has the format of (pub_number, relevant_noise_factor)
-                pub_number = item_id[idx][0]
-                pub_items_results = [item_result]
-                # add additional items to the list until reaching item associated with another pub
-                for item_idx, item in enumerate(item_id[idx + 1:], start=idx + 1):
-                    if item[0] != pub_number:
-                        break
-                    pub_items_results.append(result[item_idx])
-                combined_results.append(pub_items_results)
-            result = combined_results
+    # In case each pub is associated with several items - create a list with all
+    # relevant items for each pub
+    if item_id is not None:
+        # in case of ZNE mitigation with gate folding - should use "combined_results"
+        # object instead of the "results" object
+        combined_results = []
+        for idx, item_result in enumerate(result):
+            # each element in item_id has the format of (pub_number, relevant_noise_factor)
+            pub_number = item_id[idx][0]
+            pub_items_results = [item_result]
+            # add additional items to the list until reaching item associated with another pub
+            for item_idx, item in enumerate(item_id[idx + 1 :], start=idx + 1):
+                if item[0] != pub_number:
+                    break
+                pub_items_results.append(result[item_idx])
+            combined_results.append(pub_items_results)
 
     # Validate circuits_metadata length if provided
     circuits_metadata = circuits_metadata or [None] * len(result)
@@ -213,7 +215,7 @@ def calculate_expectation_values(
     param_shape: tuple[int, ...],
     param_basis_pairs: list[tuple[tuple[int, ...], str]],
     measure_noise_data: PauliLindbladMap | np.ndarray | None,
-):
+) -> tuple[npt.NDArray[float], npt.NDArray[float], npt.NDArray[float]]:
     """Calculate expectation values for given data, observables and params.
 
     Args:
@@ -451,7 +453,7 @@ def process_expectation_values_zne(
     extrapolated_noise_factors: list[float],
     extrapolator: list[ExtrapolatorType],
     measure_noise_data: PauliLindbladMap | np.ndarray | None,
-) -> tuple[npt.NDArray[float], npt.NDArray[float], npt.NDArray[float]]:
+) -> tuple[npt.NDArray[float], npt.NDArray[float], npt.NDArray[float], npt.NDArray[str]]:
     """Process expectation values for a single item result.
 
     Args:
@@ -461,8 +463,8 @@ def process_expectation_values_zne(
         param_basis_pairs: The map between params ndindexes to basis.
         noise_factors: The noise factors used to amplify the noise.
         extrapolated_noise_factors: Noise factors to evaluate the fits at.
-        extrapolator: The extrapolator model or models to use. Models will be tried in priority order.
-            Supported models (each fits the named function of the noise factor ``x``):
+        extrapolator: The extrapolator model or models to use. Models will be tried in priority
+            order. Supported models (each fits the named function of the noise factor ``x``):
             - ``linear``: ``a + b*x``
             - ``polynomial_degree_k`` (1 <= k <= 7): a degree-k polynomial
             - ``exponential``: ``a*exp(b*x)``
@@ -472,8 +474,10 @@ def process_expectation_values_zne(
             PauliLindbladMap of a noise model learned upfront, or a result of a calibration circuit.
 
     Returns:
-        A tuple ``(exp_vals, stds, ensemble_stds)``, where ``exp_vals`` are expectation values,
-        ``stds`` are standard deviations, and ``ensemble_stds`` are ensemble standard errors.
+        A tuple ``(exp_vals, stds, ensemble_stds, selected_extrapolators)``, where ``exp_vals``
+        are expectation values, ``stds`` are standard deviations, and ``ensemble_stds`` are
+        ensemble standard errors. ``selected_extrapolators`` is a list of the valid extrapolators
+        used to extrapolate the data.
 
     Raises:
         ValueError: If ``item_result`` has no ``'_meas'`` key.
@@ -494,7 +498,9 @@ def process_expectation_values_zne(
         if data.ndim != 4:
             # Shape: (num_randomizations, num_noise_scales, num_configs, shots, num_bits)
             # where num_configs is the total number of (param_index, basis) pairs
-            raise ValueError(f"one of the ``item_result['_meas']`` has ``{data.ndim}`` axes, expected ``4``.")
+            raise ValueError(
+                f"one of the ``item_result['_meas']`` has ``{data.ndim}`` axes, expected ``4``."
+            )
 
         # Apply measurement flips if present
         if "measurement_flips._meas" in item_result:
@@ -511,13 +517,19 @@ def process_expectation_values_zne(
         factors_stds.append(factor_stds)
         factors_ensemble_stds.append(factor_ensemble_stds)
 
+    factors_exp_vals = np.array(factors_exp_vals)
+    factors_stds = np.array(factors_stds)
+    factors_ensemble_stds = np.array(factors_ensemble_stds)
+
     # Each of factors_exp_vals, factors_stds and factors_ensemble_stds is a list of ndarray -
     # each item in the list is the results for each observable for each parameter,
     # for a different noise factor
-    return fit_extrapolation_models(
+    extrap_exp_vals, extrap_stds, sel_extrapolators = process_extrapolated_expectation_values(
         factors_exp_vals,
         factors_stds,
-        factors_ensemble_stds,
+        observables,
+        noise_factors,
         extrapolator,
         extrapolated_noise_factors,
     )
+    return extrap_exp_vals, extrap_stds, factors_ensemble_stds, sel_extrapolators
