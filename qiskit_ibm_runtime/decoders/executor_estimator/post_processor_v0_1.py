@@ -81,7 +81,7 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
     options_metadata = post_processor_data.get("options", {})
 
     # Extract item_id if present
-    item_id = post_processor_data.get("item_id", {})
+    item_id = post_processor_data.get("item_id", None)
 
     # Check if measure_mitigation was used
     measure_mitigation = post_processor_data.get("measure_mitigation", None)
