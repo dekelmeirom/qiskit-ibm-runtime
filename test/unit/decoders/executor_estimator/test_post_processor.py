@@ -911,9 +911,7 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
             flips = np.random.randint(0, 2, size=data_shape).astype(bool)
             twirled_data = flips  # effective measurement = flips XOR flips = 0
             item_results.append(
-                QuantumProgramItemResult(
-                    {"_meas": twirled_data, "measurement_flips._meas": flips}
-                )
+                QuantumProgramItemResult({"_meas": twirled_data, "measurement_flips._meas": flips})
             )
 
         exp_vals, _, _, _ = process_expectation_values_zne(
@@ -996,8 +994,8 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         # noise factor 1: all 00 → ev = +1  (lowest noise, selected by fallback)
         # noise factors 2, 3: all 11 → ev = +1 for ZZ (still +1, but values differ for XX)
         data_nf1 = np.zeros((1, 1, 10, 2), dtype=bool)  # all 00
-        data_nf2 = np.ones((1, 1, 10, 2), dtype=bool)   # all 11
-        data_nf3 = np.ones((1, 1, 10, 2), dtype=bool)   # all 11
+        data_nf2 = np.ones((1, 1, 10, 2), dtype=bool)  # all 11
+        data_nf3 = np.ones((1, 1, 10, 2), dtype=bool)  # all 11
 
         item_results = [
             QuantumProgramItemResult({"_meas": data_nf1}),
@@ -1016,7 +1014,8 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
             measure_noise_data=None,
         )
 
-        # fallback always returns the value at the lowest noise factor (noise_factor=1 → all 00 → +1)
+        # fallback always returns the value at the lowest noise factor
+        # (noise_factor=1 → all 00 → +1)
         self.assertAlmostEqual(float(exp_vals[0]), 1.0)
         self.assertEqual(sel_extrapolators[0], "fallback")
 
