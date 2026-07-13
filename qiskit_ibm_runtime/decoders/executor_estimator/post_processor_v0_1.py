@@ -80,6 +80,10 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
     # Extract options if present
     options_metadata = post_processor_data.get("options", {})
 
+    # Extract mitigation data
+    mitigation = post_processor_data.get("mitigation", None)
+    pec_gammas = post_processor_data.get("pec_gammas", None)
+
     # Extract item_id if present
     item_id = post_processor_data.get("item_id", None)
 
@@ -148,24 +152,32 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
         observables = ObservablesArray(observables_label)
         param_shape = tuple(param_shape)
 
-        # Calculate exp vals and place them in a databin
-        exp_vals, stds, ensemble_stds = process_expectation_values(
-            item_result, observables, param_shape, param_basis_pairs, readout_noise_data
-        )
-        data_bin = DataBin(evs=exp_vals, stds=stds, ensemble_standard_error=ensemble_stds)
+        # Calculate exp vals and build an EstimatorPubResult
+        if mitigation == "pec":
+            pub_result = create_pub_result_pec(
+                item_result,
+                observables,
+                param_shape,
+                param_basis_pairs,
+                readout_noise_data,
+                pec_gamma=pec_gammas[idx],
+            )
+        elif mitigation is not None:
+            raise ValueError(f"Unknown mitigation technique {mitigation}")
+        else:
+            pub_result = create_pub_result(
+                item_result, observables, param_shape, param_basis_pairs, readout_noise_data
+            )
 
-        # Get circuit metadata for this pub if available
-        pub_metadata = {}
+        # Attach circuit metadata (shared across all branches — metadata is mutable)
         if (circuit_meta := circuits_metadata[idx]) is not None:
-            pub_metadata["circuit_metadata"] = circuit_meta
-
-        pub_result = EstimatorPubResult(data=data_bin, metadata=pub_metadata)
+            pub_result.metadata["circuit_metadata"] = circuit_meta
         pub_results.append(pub_result)
 
     return PrimitiveResult(pub_results, metadata=options_metadata)
 
 
-def process_expectation_values(
+def _process_expectation_values(
     item_result: QuantumProgramItemResult,
     observables: ObservablesArray,
     param_shape: tuple[int, ...],
@@ -202,48 +214,14 @@ def process_expectation_values(
         # where num_configs is the total number of (param_index, basis) pairs
         raise ValueError(f"``item_result['_meas']`` has ``{data.ndim}`` axes, expected ``4``.")
 
-    # Apply measurement flips if present
-    if "measurement_flips._meas" in item_result:
-        data ^= item_result["measurement_flips._meas"]
-
-    return calculate_expectation_values(
-        data,
-        observables,
-        param_shape,
-        param_basis_pairs,
-        measure_noise_data,
-    )
-
-
-def calculate_expectation_values(
-    data: np.ndarray,
-    observables: ObservablesArray,
-    param_shape: tuple[int, ...],
-    param_basis_pairs: list[tuple[tuple[int, ...], str]],
-    measure_noise_data: PauliLindbladMap | np.ndarray | None,
-) -> tuple[npt.NDArray[float], npt.NDArray[float], npt.NDArray[float]]:
-    """Calculate expectation values for given data, observables and params.
-
-    Args:
-        data: The measured data result.
-        observables: The observables to calculate expectation values for.
-        param_shape: The shape of the parameter values in the original PUB.
-        param_basis_pairs: The map between params ndindexes to basis.
-        measure_noise_data: Measurement noise calibration data for TREX mitigation. Can be either a
-            PauliLindbladMap of a noise model learned upfront, or a result of a calibration circuit.
-
-    Returns:
-        A tuple ``(exp_vals, stds, ensemble_stds)``, where ``exp_vals`` are expectation values,
-        ``stds`` are standard deviations, and ``ensemble_stds`` are ensemble standard errors.
-
-    Raises:
-        ValueError: If ``param_shape`` and ``observables.shape`` cannot be broadcasted against
-            each other.
-    """
     # Get number of randomizations and shots per randomization
     num_randomizations = data.shape[0]
     shots_per_randomization = data.shape[-2]
     total_shots = num_randomizations * shots_per_randomization
+
+    # Apply measurement flips if present
+    if "measurement_flips._meas" in item_result:
+        data ^= item_result["measurement_flips._meas"]
 
     # Build efficient lookup: param_ndindex -> list of (measurement_basis, config_idx)
     # This allows us to find all available measurement bases for a given parameter
@@ -321,7 +299,7 @@ def calculate_expectation_values(
     return exp_vals, stds, ensemble_stds
 
 
-def process_expectation_values_pec(
+def _process_expectation_values_pec(
     item_result: QuantumProgramItemResult,
     observables: ObservablesArray,
     param_shape: tuple[int, ...],
