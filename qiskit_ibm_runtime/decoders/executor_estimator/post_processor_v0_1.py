@@ -434,10 +434,10 @@ def process_expectation_values_zne(
     param_shape: tuple[int, ...],
     param_basis_pairs: list[tuple[tuple[int, ...], str]],
     noise_factors: list[float],
-    extrapolated_noise_factors: list[float],
+    extrapolated_noise_factors: float | int | list[float],
     extrapolator: list[ExtrapolatorType],
     measure_noise_data: PauliLindbladMap | np.ndarray | None,
-) -> tuple[npt.NDArray[float], npt.NDArray[float], npt.NDArray[float], npt.NDArray[str]]:
+) -> tuple[npt.NDArray[float], npt.NDArray[float], npt.NDArray[float], list[list[str]]]:
     """Process expectation values for a single item result.
 
     Args:
@@ -469,11 +469,12 @@ def process_expectation_values_zne(
         ValueError: If ``param_shape`` and ``observables.shape`` cannot be broadcasted against
             each other.
     """
-    # calculate exp_val and std for each noise factor
-    factors_exp_vals = []
-    factors_stds = []
-    factors_ensemble_stds = []
-    for item_result in item_results:
+    if isinstance(extrapolated_noise_factors, (float, int)):
+        extrapolated_noise_factors = [extrapolated_noise_factors]
+
+    # Combine the data from each noise factor
+    noise_amplified_data = []
+    for i, item_result in enumerate(item_results):
         try:
             data = item_result["_meas"]
         except KeyError:
@@ -490,30 +491,15 @@ def process_expectation_values_zne(
         if "measurement_flips._meas" in item_result:
             data ^= item_result["measurement_flips._meas"]
 
-        factor_exp_vals, factor_stds, factor_ensemble_stds = calculate_expectation_values(
-            data,
-            observables,
-            param_shape,
-            param_basis_pairs,
-            measure_noise_data,
-        )
-        factors_exp_vals.append(factor_exp_vals)
-        factors_stds.append(factor_stds)
-        factors_ensemble_stds.append(factor_ensemble_stds)
+        noise_amplified_data.append(data)
 
-    factors_exp_vals = np.array(factors_exp_vals)
-    factors_stds = np.array(factors_stds)
-    factors_ensemble_stds = np.array(factors_ensemble_stds)
-
-    # Each of factors_exp_vals, factors_stds and factors_ensemble_stds is a list of ndarray -
-    # each item in the list is the results for each observable for each parameter,
-    # for a different noise factor
-    extrap_exp_vals, extrap_stds, sel_extrapolators = process_extrapolated_expectation_values(
-        factors_exp_vals,
-        factors_stds,
+    return calculate_extrapolated_expectation_values(
+        np.array(noise_amplified_data),
         observables,
+        param_shape,
+        param_basis_pairs,
         noise_factors,
-        extrapolator,
         extrapolated_noise_factors,
+        extrapolator,
+        measure_noise_data,
     )
-    return extrap_exp_vals, extrap_stds, factors_ensemble_stds, sel_extrapolators

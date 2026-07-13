@@ -1111,13 +1111,14 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         item_results = self._make_item_results(3, data_shape)
         num_extrapolated = 2
         extrapolated_noise_factors = [0.0, 0.5]
+        noise_factors = [1.0, 2.0, 3.0]
 
         exp_vals, stds, ensemble_stds, sel_extrapolators = process_expectation_values_zne(
             item_results=item_results,
             observables=observables,
             param_shape=param_shape,
             param_basis_pairs=param_basis_pairs,
-            noise_factors=[1.0, 2.0, 3.0],
+            noise_factors=noise_factors,
             extrapolated_noise_factors=extrapolated_noise_factors,
             extrapolator=["linear"],
             measure_noise_data=None,
@@ -1129,7 +1130,7 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         # ensemble_stds is stacked across noise factors → shape (num_noise_factors, *output_shape)
         base_shape = np.broadcast_shapes(obs_shape, param_shape)
         self.assertTupleEqual(ensemble_stds.shape, (3,) + base_shape)
-        self.assertTupleEqual(sel_extrapolators.shape, expected_shape)
+        self.assertTupleEqual(len(sel_extrapolators), len(noise_factors))
 
     def test_extrapolator_name_in_selected_extrapolators_zne(self):
         """Test that the selected_extrapolators contains the name of the used extrapolator."""
