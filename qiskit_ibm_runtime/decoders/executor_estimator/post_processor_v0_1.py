@@ -163,9 +163,9 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
                 param_shape,
                 param_basis_pairs,
                 readout_noise_data,
-                zne_noise_factors,
-                extrapolated_noise_factors,
-                extrapolator,
+                noise_factors=zne_noise_factors,
+                extrapolated_noise_factors=extrapolated_noise_factors,
+                extrapolator=extrapolator,
             )
         elif mitigation is not None:
             raise ValueError(f"Unknown mitigation technique {mitigation}")
