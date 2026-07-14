@@ -24,6 +24,7 @@ from qiskit_ibm_runtime.decoders.executor_estimator.post_processor_v0_1 import (
     _process_expectation_values_zne,
     create_pub_result,
     create_pub_result_pec,
+    create_pub_result_zne,
     estimator_v2_post_processor_v0_1,
 )
 from qiskit_ibm_runtime.executor_estimator.utils import get_pauli_basis, unbroadcast_index
@@ -1210,3 +1211,301 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         # One result per extrapolated noise factor
         self.assertEqual(exp_vals.shape[0], len(extrapolated_noise_factors))
         self.assertEqual(stds.shape[0], len(extrapolated_noise_factors))
+
+
+@ddt
+class TestCreatePubResultZNE(unittest.TestCase):
+    """Tests for the ``create_pub_result_zne`` function."""
+
+    def get_param_basis_pairs(self, observables, param_shape):
+        """Helper to compute values for ``param_basis_pairs``.
+
+        Assumes that all the elements of ``observables`` anti-commute, and does not attempt
+        to do any grouping.
+        """
+        param_basis_pairs = []
+        for bcast_index in np.ndindex(np.broadcast_shapes(observables.shape, param_shape)):
+            param_index = unbroadcast_index(bcast_index, param_shape)
+            obs_index = unbroadcast_index(bcast_index, observables.shape)
+            observable = observables[obs_index]
+            basis = next(iter(observable.keys()))  # observable is a dict from label to coeff
+            param_basis_pairs.append([param_index, get_pauli_basis(basis)])
+        return param_basis_pairs
+
+    def _make_item_results(self, num_noise_factors, data_shape):
+        """Helper to create a list of QuantumProgramItemResults, one per noise factor."""
+        return [
+            QuantumProgramItemResult({"_meas": np.zeros(data_shape, dtype=bool)})
+            for _ in range(num_noise_factors)
+        ]
+
+    def test_missing_meas_creg_raises_zne(self):
+        """Test that a missing ``'_meas'`` key in one of the item results raises ValueError."""
+        bad_item = QuantumProgramItemResult({"meas": np.zeros((1, 1, 10, 2), dtype=bool)})
+        good_item = QuantumProgramItemResult({"_meas": np.zeros((1, 1, 10, 2), dtype=bool)})
+
+        with self.assertRaisesRegex(ValueError, "Dedicated creg ``'_meas'``"):
+            create_pub_result_zne(
+                item_results=[bad_item, good_item],
+                observables=ObservablesArray({"ZZ": 1.0}),
+                param_shape=(),
+                param_basis_pairs=[((), "ZZ")],
+                measure_noise_data=None,
+                noise_factors=[1.0, 2.0],
+                extrapolated_noise_factors=[0.0],
+                extrapolator=["linear"],
+            )
+
+    def test_ndim_raises_zne(self):
+        """Test that an item result with invalid ndim raises ValueError."""
+        bad_data = np.zeros((3, 3), dtype=bool)  # 2D instead of 4D
+        item_results = [QuantumProgramItemResult({"_meas": bad_data})]
+
+        with self.assertRaisesRegex(ValueError, "axes, expected ``4``"):
+            create_pub_result_zne(
+                item_results=item_results,
+                observables=ObservablesArray({"ZZ": 1.0}),
+                param_shape=(),
+                param_basis_pairs=[((), "ZZ")],
+                measure_noise_data=None,
+                noise_factors=[1.0],
+                extrapolated_noise_factors=[0.0],
+                extrapolator=["linear"],
+            )
+
+    def test_evs_2d_obs_no_params_zne(self):
+        """Test ``create_pub_result_zne`` with 2D observables and no params."""
+        # Two configs: one for ZZ, one for XX (all 00 measurements)
+        data_shape = (1, 2, 10, 2)
+        item_results = self._make_item_results(3, data_shape)
+
+        observables = ObservablesArray([{"ZZ": 1.0}, {"XX": 1.0}])
+
+        pub_result = create_pub_result_zne(
+            item_results=item_results,
+            observables=observables,
+            param_shape=(),
+            param_basis_pairs=[((), "ZZ"), ((), "XX")],
+            measure_noise_data=None,
+            noise_factors=[1.0, 2.0, 3.0],
+            extrapolated_noise_factors=[0.0],
+            extrapolator=["linear"],
+        )
+        evs = pub_result.data.evs
+
+        # All-zero measurements give +1 for both ZZ and XX; linear fit of constant +1 → +1 at 0
+        expected = np.ones((1,) + observables.shape)
+        self.assertTrue(np.allclose(evs, expected), msg=f"evs={evs}")
+
+    @data(
+        [(4,), (4,), np.array([0.5, 1, 1, 1])],
+        [(2, 2), (2, 2), np.array([[0.5, 1], [1, 1]])],
+    )
+    @unpack
+    def test_evs_values_without_twirling_zne(self, obs_shape, param_shape, expected_evs):
+        """Test the correctness of evs when twirling is OFF with ZNE.
+
+        Constant all-zero measurements across all noise factors should extrapolate to the
+        expected values at zero noise.
+        """
+        obs_like = [{"000": 1 / 2, "111": 1 / 2}, {"+++": 1}, {"rrr": 1}, {"+r0": 1}]
+        observables = ObservablesArray(obs_like).reshape(obs_shape)
+        num_configs = len(obs_like)
+        num_qubits = observables.num_qubits
+
+        item_results = self._make_item_results(3, (1, num_configs, 10, num_qubits))
+
+        pub_result = create_pub_result_zne(
+            item_results=item_results,
+            observables=observables,
+            param_shape=param_shape,
+            param_basis_pairs=self.get_param_basis_pairs(observables, param_shape),
+            measure_noise_data=None,
+            noise_factors=[1.0, 2.0, 3.0],
+            extrapolated_noise_factors=[0.0],
+            extrapolator=["linear"],
+        )
+        evs = pub_result.data.evs
+
+        # Extrapolation of a constant sequence should return the same constant value
+        expected = expected_evs[np.newaxis, ...]  # add extrapolated_noise_factors axis
+        self.assertTrue(np.allclose(evs, expected), msg=f"Expected {expected}, got {evs}")
+
+    @data(
+        [(4,), (4,), np.array([0.5, 1, 1, 1])],
+        [(2, 2), (2, 2), np.array([[0.5, 1], [1, 1]])],
+    )
+    @unpack
+    def test_evs_values_with_twirling_zne(self, obs_shape, param_shape, expected_evs):
+        """Test the correctness of evs when twirling is ON with ZNE.
+
+        Twirled all-zero data across all noise factors should give the same extrapolated
+        expectation values as without twirling.
+        """
+        obs_like = [{"000": 1 / 2, "111": 1 / 2}, {"+++": 1}, {"rrr": 1}, {"+r0": 1}]
+        observables = ObservablesArray(obs_like).reshape(obs_shape)
+        num_configs = len(obs_like)
+        num_qubits = observables.num_qubits
+
+        data_shape = (18, num_configs, 10, num_qubits)
+        item_results = []
+        for _ in range(3):
+            flips = np.random.randint(0, 2, size=data_shape).astype(bool)
+            twirled_data = flips  # effective measurement = flips XOR flips = 0
+            item_results.append(
+                QuantumProgramItemResult({"_meas": twirled_data, "measurement_flips._meas": flips})
+            )
+
+        pub_result = create_pub_result_zne(
+            item_results=item_results,
+            observables=observables,
+            param_shape=param_shape,
+            param_basis_pairs=self.get_param_basis_pairs(observables, param_shape),
+            measure_noise_data=None,
+            noise_factors=[1.0, 2.0, 3.0],
+            extrapolated_noise_factors=[0.0],
+            extrapolator=["linear"],
+        )
+        evs = pub_result.data.evs
+
+        expected = expected_evs[np.newaxis, ...]
+        self.assertTrue(np.allclose(evs, expected), msg=f"Expected {expected}, got {evs}")
+
+    @data(
+        [(2, 2), (2, 2)],
+        [(3, 4, 1, 1), (4, 3)],
+        [(4, 3), (3, 4, 1, 1)],
+        [(4, 3), ()],
+        [(), (4, 3)],
+    )
+    @unpack
+    def test_evs_shape_with_non_trivial_broadcasting_zne(self, obs_shape, param_shape):
+        """Test shape of evs/stds/ensemble_standard_error for non-trivial broadcasting."""
+        num_qubits = 33
+        num_paulis = int(np.prod(obs_shape))
+        random_paulis = random_pauli_list(num_qubits, num_paulis, phase=False)
+        observables = ObservablesArray(random_paulis).reshape(obs_shape)
+
+        param_basis_pairs = self.get_param_basis_pairs(observables, param_shape)
+        num_basis = sum(len(basis) for _param_idx, basis in param_basis_pairs)
+        data_shape = (1, num_basis, 10, num_qubits)
+
+        item_results = self._make_item_results(3, data_shape)
+        num_extrapolated = 2
+        extrapolated_noise_factors = [0.0, 0.5]
+
+        pub_result = create_pub_result_zne(
+            item_results=item_results,
+            observables=observables,
+            param_shape=param_shape,
+            param_basis_pairs=param_basis_pairs,
+            measure_noise_data=None,
+            noise_factors=[1.0, 2.0, 3.0],
+            extrapolated_noise_factors=extrapolated_noise_factors,
+            extrapolator=["linear"],
+        )
+
+        base_shape = np.broadcast_shapes(obs_shape, param_shape)
+        expected_shape = (num_extrapolated,) + base_shape
+        self.assertTupleEqual(pub_result.data.evs.shape, expected_shape)
+        self.assertTupleEqual(pub_result.data.stds.shape, expected_shape)
+        self.assertTupleEqual(pub_result.data.ensemble_standard_error.shape, expected_shape)
+
+    def test_fallback_extrapolator_zne(self):
+        """Test ``create_pub_result_zne`` with the ``fallback`` extrapolator.
+
+        ``fallback`` always returns the value measured at the lowest noise factor.
+        """
+        data_nf1 = np.zeros((1, 1, 10, 2), dtype=bool)  # all 00 → ZZ ev = +1
+        data_nf2 = np.ones((1, 1, 10, 2), dtype=bool)  # all 11 → ZZ ev = +1 (but different raw)
+        data_nf3 = np.ones((1, 1, 10, 2), dtype=bool)
+
+        item_results = [
+            QuantumProgramItemResult({"_meas": data_nf1}),
+            QuantumProgramItemResult({"_meas": data_nf2}),
+            QuantumProgramItemResult({"_meas": data_nf3}),
+        ]
+
+        pub_result = create_pub_result_zne(
+            item_results=item_results,
+            observables=ObservablesArray({"ZZ": 1.0}),
+            param_shape=(),
+            param_basis_pairs=[((), "ZZ")],
+            measure_noise_data=None,
+            noise_factors=[1.0, 2.0, 3.0],
+            extrapolated_noise_factors=[0.0],
+            extrapolator=["fallback"],
+        )
+
+        # fallback returns the value at noise_factor=1 → all 00 → ZZ ev = +1
+        self.assertAlmostEqual(float(pub_result.data.evs[0]), 1.0)
+
+    def test_multiple_extrapolated_noise_factors_zne(self):
+        """Test that ``create_pub_result_zne`` returns correct shape results."""
+        data_shape = (1, 1, 10, 2)
+        item_results = self._make_item_results(3, data_shape)
+        extrapolated_noise_factors = [0.0, 0.5, 1.0]
+
+        pub_result = create_pub_result_zne(
+            item_results=item_results,
+            observables=ObservablesArray({"ZZ": 1.0}),
+            param_shape=(),
+            param_basis_pairs=[((), "ZZ")],
+            measure_noise_data=None,
+            noise_factors=[1.0, 2.0, 3.0],
+            extrapolated_noise_factors=extrapolated_noise_factors,
+            extrapolator=["linear"],
+        )
+
+        # One result per extrapolated noise factor (leading dimension)
+        self.assertEqual(pub_result.data.evs.shape[0], len(extrapolated_noise_factors))
+        self.assertEqual(pub_result.data.stds.shape[0], len(extrapolated_noise_factors))
+        self.assertEqual(
+            pub_result.data.ensemble_standard_error.shape[0], len(extrapolated_noise_factors)
+        )
+
+    def test_stds_without_twirling_zne(self):
+        """Test that stds and ensemble_standard_error are equal when twirling is OFF."""
+        # Single randomization (no twirling): shape (1, 1, 10, 2)
+        data_shape = (1, 1, 10, 2)
+        item_results = self._make_item_results(3, data_shape)
+
+        pub_result = create_pub_result_zne(
+            item_results=item_results,
+            observables=ObservablesArray({"ZZ": 1.0}),
+            param_shape=(),
+            param_basis_pairs=[((), "ZZ")],
+            measure_noise_data=None,
+            noise_factors=[1.0, 2.0, 3.0],
+            extrapolated_noise_factors=[0.0],
+            extrapolator=["linear"],
+        )
+
+        # num_randomizations == 1 → stds == ensemble_standard_error
+        self.assertAlmostEqual(
+            float(pub_result.data.stds[0]),
+            float(pub_result.data.ensemble_standard_error[0]),
+        )
+
+    def test_returns_estimator_pub_result_zne(self):
+        """Test that ``create_pub_result_zne`` returns an ``EstimatorPubResult`` instance."""
+        from qiskit_ibm_runtime.results.estimator_pub import EstimatorPubResult
+
+        data_shape = (1, 1, 10, 2)
+        item_results = self._make_item_results(2, data_shape)
+
+        pub_result = create_pub_result_zne(
+            item_results=item_results,
+            observables=ObservablesArray({"ZZ": 1.0}),
+            param_shape=(),
+            param_basis_pairs=[((), "ZZ")],
+            measure_noise_data=None,
+            noise_factors=[1.0, 2.0],
+            extrapolated_noise_factors=[0.0],
+            extrapolator=["linear"],
+        )
+
+        self.assertIsInstance(pub_result, EstimatorPubResult)
+        self.assertIn("evs", pub_result.data)
+        self.assertIn("stds", pub_result.data)
+        self.assertIn("ensemble_standard_error", pub_result.data)
