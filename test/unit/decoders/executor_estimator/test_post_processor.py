@@ -21,10 +21,10 @@ from qiskit.primitives.containers.estimator_pub import ObservablesArray
 from qiskit.quantum_info import random_pauli_list
 
 from qiskit_ibm_runtime.decoders.executor_estimator.post_processor_v0_1 import (
+    _process_expectation_values_zne,
     create_pub_result,
     create_pub_result_pec,
     estimator_v2_post_processor_v0_1,
-    process_expectation_values_zne,
 )
 from qiskit_ibm_runtime.executor_estimator.utils import get_pauli_basis, unbroadcast_index
 from qiskit_ibm_runtime.results.quantum_program import (
@@ -910,7 +910,7 @@ class TestEstimatorV2PostProcessorPEC(unittest.TestCase):
 
 @ddt
 class TestProcessExpectationValuesZNE(unittest.TestCase):
-    """Tests for the ``process_expectation_values_zne`` method."""
+    """Tests for the ``_process_expectation_values_zne`` method."""
 
     def get_param_basis_pairs(self, observables, param_shape):
         """Helper to compute values for ``param_basis_pairs``.
@@ -941,7 +941,7 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         good_item = QuantumProgramItemResult({"_meas": np.zeros((1, 1, 10, 2), dtype=bool)})
 
         with self.assertRaisesRegex(ValueError, "Dedicated creg ``'_meas'``"):
-            process_expectation_values_zne(
+            _process_expectation_values_zne(
                 item_results=[bad_item, good_item],
                 observables=ObservablesArray({"ZZ": 1.0}),
                 param_shape=(),
@@ -958,7 +958,7 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         item_results = [QuantumProgramItemResult({"_meas": bad_data})]
 
         with self.assertRaisesRegex(ValueError, "axes, expected ``4``"):
-            process_expectation_values_zne(
+            _process_expectation_values_zne(
                 item_results=item_results,
                 observables=ObservablesArray({"ZZ": 1.0}),
                 param_shape=(),
@@ -974,7 +974,7 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         data_shape = (1, 1, 10, 2)
         item_results = self._make_item_results(3, data_shape)
 
-        result = process_expectation_values_zne(
+        result = _process_expectation_values_zne(
             item_results=item_results,
             observables=ObservablesArray({"ZZ": 1.0}),
             param_shape=(),
@@ -990,8 +990,13 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         # With one extrapolated noise factor and scalar output, shape should be (1,)
         self.assertEqual(exp_vals.shape, (1,))
         self.assertEqual(stds.shape, (1,))
-        # sel_extrapolators should contain the name of the chosen extrapolator
-        self.assertIsInstance(sel_extrapolators[0], str)
+        # ensemble_stds has the same shape as exp_vals (one per extrapolated noise factor)
+        self.assertEqual(ensemble_stds.shape, (1,))
+        # sel_extrapolators is a list of prod(output_shape) elements; each is a list of per-term
+        # numpy arrays of shape (num_extrapolated_noise_factors,) with extrapolator name strings
+        self.assertEqual(len(sel_extrapolators), 1)  # one bcast_index for scalar observable
+        self.assertEqual(len(sel_extrapolators[0]), 1)  # one term in ZZ
+        self.assertIsInstance(sel_extrapolators[0][0][0], str)  # the extrapolator name
 
     def test_evs_2d_obs_no_params_zne(self):
         """Test ZNE with 2D observables and no params; all-zero measurements."""
@@ -1001,7 +1006,7 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
 
         observables = ObservablesArray([{"ZZ": 1.0}, {"XX": 1.0}])
 
-        exp_vals, stds, ensemble_stds, sel_extrapolators = process_expectation_values_zne(
+        exp_vals, stds, ensemble_stds, sel_extrapolators = _process_expectation_values_zne(
             item_results=item_results,
             observables=observables,
             param_shape=(),
@@ -1035,7 +1040,7 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         # Identical all-zero data for each noise factor → constant curves → extrapolation = same
         item_results = self._make_item_results(3, (1, num_configs, 10, num_qubits))
 
-        exp_vals, _, _, _ = process_expectation_values_zne(
+        exp_vals, _, _, _ = _process_expectation_values_zne(
             item_results=item_results,
             observables=observables,
             param_shape=param_shape,
@@ -1075,7 +1080,7 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
                 QuantumProgramItemResult({"_meas": twirled_data, "measurement_flips._meas": flips})
             )
 
-        exp_vals, _, _, _ = process_expectation_values_zne(
+        exp_vals, _, _, _ = _process_expectation_values_zne(
             item_results=item_results,
             observables=observables,
             param_shape=param_shape,
@@ -1113,7 +1118,7 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         extrapolated_noise_factors = [0.0, 0.5]
         noise_factors = [1.0, 2.0, 3.0]
 
-        exp_vals, stds, ensemble_stds, sel_extrapolators = process_expectation_values_zne(
+        exp_vals, stds, ensemble_stds, sel_extrapolators = _process_expectation_values_zne(
             item_results=item_results,
             observables=observables,
             param_shape=param_shape,
@@ -1124,20 +1129,21 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
             measure_noise_data=None,
         )
 
-        expected_shape = (num_extrapolated,) + np.broadcast_shapes(obs_shape, param_shape)
+        base_shape = np.broadcast_shapes(obs_shape, param_shape)
+        expected_shape = (num_extrapolated,) + base_shape
         self.assertTupleEqual(exp_vals.shape, expected_shape)
         self.assertTupleEqual(stds.shape, expected_shape)
-        # ensemble_stds is stacked across noise factors → shape (num_noise_factors, *output_shape)
-        base_shape = np.broadcast_shapes(obs_shape, param_shape)
-        self.assertTupleEqual(ensemble_stds.shape, (3,) + base_shape)
-        self.assertTupleEqual(len(sel_extrapolators), len(noise_factors))
+        # ensemble_stds has the same shape as exp_vals (one entry per extrapolated noise factor)
+        self.assertTupleEqual(ensemble_stds.shape, expected_shape)
+        # sel_extrapolators has one entry per broadcast index (i.e. prod of output_shape)
+        self.assertEqual(len(sel_extrapolators), int(np.prod(base_shape)))
 
     def test_extrapolator_name_in_selected_extrapolators_zne(self):
         """Test that the selected_extrapolators contains the name of the used extrapolator."""
         data_shape = (1, 1, 10, 2)
         item_results = self._make_item_results(3, data_shape)
 
-        _, _, _, sel_extrapolators = process_expectation_values_zne(
+        _, _, _, sel_extrapolators = _process_expectation_values_zne(
             item_results=item_results,
             observables=ObservablesArray({"ZZ": 1.0}),
             param_shape=(),
@@ -1148,7 +1154,9 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
             measure_noise_data=None,
         )
 
-        self.assertEqual(sel_extrapolators[0], "linear")
+        # sel_extrapolators[bcast_idx][term_idx] is an array of extrapolator names,
+        # one per extrapolated noise factor.  For a single-term scalar observable:
+        self.assertEqual(sel_extrapolators[0][0][0], "linear")
 
     def test_fallback_extrapolator_zne(self):
         """Test ZNE with only the ``fallback`` extrapolator returns the lowest-noise-factor ev."""
@@ -1165,7 +1173,7 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
             QuantumProgramItemResult({"_meas": data_nf3}),
         ]
 
-        exp_vals, _, _, sel_extrapolators = process_expectation_values_zne(
+        exp_vals, _, _, sel_extrapolators = _process_expectation_values_zne(
             item_results=item_results,
             observables=ObservablesArray({"ZZ": 1.0}),
             param_shape=(),
@@ -1179,7 +1187,8 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         # fallback always returns the value at the lowest noise factor
         # (noise_factor=1 → all 00 → +1)
         self.assertAlmostEqual(float(exp_vals[0]), 1.0)
-        self.assertEqual(sel_extrapolators[0], "fallback")
+        # sel_extrapolators[bcast_idx][term_idx][extrap_idx]
+        self.assertEqual(sel_extrapolators[0][0][0], "fallback")
 
     def test_multiple_extrapolated_noise_factors_zne(self):
         """Test ZNE with multiple extrapolated noise factors returns results for each."""
@@ -1187,7 +1196,7 @@ class TestProcessExpectationValuesZNE(unittest.TestCase):
         item_results = self._make_item_results(3, data_shape)
         extrapolated_noise_factors = [0.0, 0.5, 1.0]
 
-        exp_vals, stds, _, _ = process_expectation_values_zne(
+        exp_vals, stds, _, _ = _process_expectation_values_zne(
             item_results=item_results,
             observables=ObservablesArray({"ZZ": 1.0}),
             param_shape=(),
