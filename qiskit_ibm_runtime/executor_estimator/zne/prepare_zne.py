@@ -183,6 +183,8 @@ def prepare_zne(
             "measure_mitigation": measure_noise_learning is not None,
             "mitigation": "zne",
             "zne_noise_factors": noise_factors,
+            "extrapolated_noise_factors": zne_options.extrapolated_noise_factors,
+            "extrapolator": zne_options.extrapolator,
             "item_id": item_id,
         },
     }

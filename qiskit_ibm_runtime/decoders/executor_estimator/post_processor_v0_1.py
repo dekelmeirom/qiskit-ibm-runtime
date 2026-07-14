@@ -84,8 +84,10 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
     mitigation = post_processor_data.get("mitigation", None)
     pec_gammas = post_processor_data.get("pec_gammas", None)
 
-    # Extract item_id if present
-    item_id = post_processor_data.get("item_id", None)
+    # Extract zne mitigation data if present
+    zne_noise_factors = post_processor_data.get("zne_noise_factors", None)
+    extrapolated_noise_factors = post_processor_data.get("extrapolated_noise_factors", None)
+    extrapolator = post_processor_data.get("extrapolator", None)
 
     # Check if measure_mitigation was used
     measure_mitigation = post_processor_data.get("measure_mitigation", None)
@@ -107,26 +109,11 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
 
     # In case each pub is associated with several items - create a list in which each element
     # is a list containing all relevant items for that pub
-    if item_id is not None:
-        # in case of ZNE mitigation with gate folding - should use "combined_results"
-        # object instead of the "results" object
-        combined_results = []
-        skip_counter = 0
-        for idx, item_result in enumerate(result):
-            # skip items relevant for the previous pub
-            if skip_counter > 0:
-                skip_counter -= 1
-                continue
-            # each element in item_id has the format of (pub_number, relevant_noise_factor)
-            pub_number = item_id[idx][0]
-            pub_items_results = [item_result]
-            # add additional items to the list until reaching item associated with another pub
-            for item_idx, item in enumerate(item_id[idx + 1 :], start=idx + 1):
-                if item[0] != pub_number:
-                    break
-                pub_items_results.append(result[item_idx])
-                skip_counter += 1
-            combined_results.append(pub_items_results)
+    res_step = 1
+    if zne_noise_factors is not None:
+        # in case of ZNE mitigation with gate folding - each pub is associated with
+        # len(zne_noise_factors) result items
+        res_step = len(zne_noise_factors)
 
     # Validate circuits_metadata length if provided
     circuits_metadata = circuits_metadata or [None] * len(result)
@@ -145,9 +132,16 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
 
     # Build EstimatorPubResult for each pub
     pub_results = []
-    for idx, (item_result, observables_label, param_basis_pairs, param_shape) in enumerate(
-        zip(result, observables_lists, param_basis_pairs_lists, param_shapes_list)
+    for pub_idx, (item_result, observables_label, param_basis_pairs, param_shape) in enumerate(
+        zip(result[::res_step], observables_lists, param_basis_pairs_lists, param_shapes_list)
     ):
+        # In case each pub is associated with several items - create a list in which each element
+        # is a list containing all relevant items for that pub
+        combined_results = []
+        if res_step != 1:
+            for item_idx in range(pub_idx * res_step, (pub_idx + 1) * res_step):
+                combined_results.append(result[item_idx])
+
         # Reconstruct observables and measure_bases
         observables = ObservablesArray(observables_label)
         param_shape = tuple(param_shape)
@@ -160,7 +154,18 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
                 param_shape,
                 param_basis_pairs,
                 readout_noise_data,
-                pec_gamma=pec_gammas[idx],
+                pec_gamma=pec_gammas[pub_idx],
+            )
+        elif mitigation == "zne":
+            pub_result = create_pub_result_zne(
+                combined_results,
+                observables,
+                param_shape,
+                param_basis_pairs,
+                readout_noise_data,
+                zne_noise_factors,
+                extrapolated_noise_factors,
+                extrapolator,
             )
         elif mitigation is not None:
             raise ValueError(f"Unknown mitigation technique {mitigation}")
@@ -170,7 +175,7 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
             )
 
         # Attach circuit metadata (shared across all branches — metadata is mutable)
-        if (circuit_meta := circuits_metadata[idx]) is not None:
+        if (circuit_meta := circuits_metadata[pub_idx]) is not None:
             pub_result.metadata["circuit_metadata"] = circuit_meta
         pub_results.append(pub_result)
 
@@ -428,7 +433,114 @@ def _process_expectation_values_pec(
     return exp_vals, stds, ensemble_stds
 
 
-def process_expectation_values_zne(
+def create_pub_result(
+    item_result: QuantumProgramItemResult,
+    observables: ObservablesArray,
+    param_shape: tuple[int, ...],
+    param_basis_pairs: list[tuple[tuple[int, ...], str]],
+    measure_noise_data: PauliLindbladMap | np.ndarray | None,
+) -> EstimatorPubResult:
+    """Calculate expectation values and errors, and return pub result.
+
+    Args:
+        item_result: The item result.
+        observables: The observables to calculate expectation values for.
+        param_shape: The shape of the parameter values in the original PUB.
+        param_basis_pairs: The map between params ndindexes to basis.
+        measure_noise_data: Measurement noise calibration data for TREX mitigation.
+
+    Returns:
+        An :class:`~qiskit_ibm_runtime.results.EstimatorPubResult` with an empty metadata dict.
+    """
+    exp_vals, stds, ensemble_stds = _process_expectation_values(
+        item_result, observables, param_shape, param_basis_pairs, measure_noise_data
+    )
+    data_bin = DataBin(
+        evs=exp_vals, stds=stds, ensemble_standard_error=ensemble_stds, shape=exp_vals.shape
+    )
+    return EstimatorPubResult(data=data_bin)
+
+
+def create_pub_result_pec(
+    item_result: QuantumProgramItemResult,
+    observables: ObservablesArray,
+    param_shape: tuple[int, ...],
+    param_basis_pairs: list[tuple[tuple[int, ...], str]],
+    measure_noise_data: PauliLindbladMap | np.ndarray | None,
+    pec_gamma: float,
+) -> EstimatorPubResult:
+    """Calculate expectation values and errors with PEC, and return pub result.
+
+    Args:
+        item_result: The item result.
+        observables: The observables to calculate expectation values for.
+        param_shape: The shape of the parameter values in the original PUB.
+        param_basis_pairs: The map between params ndindexes to basis.
+        measure_noise_data: Measurement noise calibration data for TREX mitigation.
+        pec_gamma: Gamma factor for PEC mitigation.
+
+    Returns:
+        An :class:`~qiskit_ibm_runtime.results.EstimatorPubResult` with an empty metadata dict.
+    """
+    exp_vals, stds, ensemble_stds = _process_expectation_values_pec(
+        item_result, observables, param_shape, param_basis_pairs, measure_noise_data, pec_gamma
+    )
+    data_bin = DataBin(
+        evs=exp_vals, stds=stds, ensemble_standard_error=ensemble_stds, shape=exp_vals.shape
+    )
+    return EstimatorPubResult(data=data_bin)
+
+
+def create_pub_result_zne(
+    item_results: list[QuantumProgramItemResult],
+    observables: ObservablesArray,
+    param_shape: tuple[int, ...],
+    param_basis_pairs: list[tuple[tuple[int, ...], str]],
+    measure_noise_data: PauliLindbladMap | np.ndarray | None,
+    noise_factors: list[float],
+    extrapolated_noise_factors: float | int | list[float],
+    extrapolator: list[ExtrapolatorType],
+) -> EstimatorPubResult:
+    """Calculate expectation values and errors with ZNE, and return pub result.
+
+    Args:
+        item_results: The item result.
+        observables: The observables to calculate expectation values for.
+        param_shape: The shape of the parameter values in the original PUB.
+        param_basis_pairs: The map between params ndindexes to basis.
+        measure_noise_data: Measurement noise calibration data for TREX mitigation.
+        noise_factors: The noise factors used to amplify the noise.
+        extrapolated_noise_factors: Noise factors to evaluate the fits at.
+        extrapolator: The extrapolator model or models to use. Models will be tried in priority
+            order. Supported models (each fits the named function of the noise factor ``x``):
+            - ``"linear"``: ``a + b*x``
+            - ``"polynomial_degree_k"`` (1 <= k <= 7): a degree-k polynomial
+            - ``"exponential"``: ``a*exp(b*x)``
+            - ``"double_exponential"``: ``a*exp(b*x) + c*exp(d*x)`` (rates constrained to decay)
+            - ``"fallback"``: no fit; the measured value at the lowest noise factor
+
+    Returns:
+        An :class:`~qiskit_ibm_runtime.results.EstimatorPubResult` with an empty metadata dict.
+    """
+    # The last returned value is the selected extrapolators, that should be saved in the
+    # metadata
+    exp_vals, stds, ensemble_stds, _ = _process_expectation_values_zne(
+        item_results,
+        observables,
+        param_shape,
+        param_basis_pairs,
+        noise_factors,
+        extrapolated_noise_factors,
+        extrapolator,
+        measure_noise_data,
+    )
+    data_bin = DataBin(
+        evs=exp_vals, stds=stds, ensemble_standard_error=ensemble_stds, shape=exp_vals.shape
+    )
+    return EstimatorPubResult(data=data_bin)
+
+
+def _process_expectation_values_zne(
     item_results: list[QuantumProgramItemResult],
     observables: ObservablesArray,
     param_shape: tuple[int, ...],
@@ -449,11 +561,11 @@ def process_expectation_values_zne(
         extrapolated_noise_factors: Noise factors to evaluate the fits at.
         extrapolator: The extrapolator model or models to use. Models will be tried in priority
             order. Supported models (each fits the named function of the noise factor ``x``):
-            - ``linear``: ``a + b*x``
-            - ``polynomial_degree_k`` (1 <= k <= 7): a degree-k polynomial
-            - ``exponential``: ``a*exp(b*x)``
-            - ``double_exponential``: ``a*exp(b*x) + c*exp(d*x)`` (rates constrained to decay)
-            - ``fallback``: no fit; the measured value at the lowest noise factor
+            - ``"linear"``: ``a + b*x``
+            - ``"polynomial_degree_k"`` (1 <= k <= 7): a degree-k polynomial
+            - ``"exponential"``: ``a*exp(b*x)``
+            - ``"double_exponential"``: ``a*exp(b*x) + c*exp(d*x)`` (rates constrained to decay)
+            - ``"fallback"``: no fit; the measured value at the lowest noise factor
         measure_noise_data: Measurement noise calibration data for TREX mitigation. Can be either a
             PauliLindbladMap of a noise model learned upfront, or a result of a calibration circuit.
 
