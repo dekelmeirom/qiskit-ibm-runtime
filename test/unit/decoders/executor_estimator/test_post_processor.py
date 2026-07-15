@@ -24,7 +24,6 @@ from qiskit_ibm_runtime.decoders.executor_estimator.post_processor_v0_1 import (
     _process_expectation_values_zne,
     create_pub_result,
     create_pub_result_pec,
-    create_pub_result_zne,
     estimator_v2_post_processor_v0_1,
 )
 from qiskit_ibm_runtime.executor_estimator.utils import get_pauli_basis, unbroadcast_index
