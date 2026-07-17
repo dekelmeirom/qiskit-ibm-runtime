@@ -220,7 +220,7 @@ class TestEstimatorV2PostProcessor(IBMTestCase):
                 "measure_bases": [["ZZ"]],
                 "param_basis_pairs": [[([], "ZZ")]],
                 "param_shapes": [[]],
-                "measure_mitigation": "True",
+                "measure_mitigation": True,
             },
         }
 
