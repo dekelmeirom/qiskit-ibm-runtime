@@ -12,7 +12,6 @@
 
 """Unit tests for EstimatorV2 ZNE helper functions."""
 
-import unittest
 from typing import Any, cast
 
 import numpy as np
@@ -23,17 +22,17 @@ from qiskit.primitives.containers.estimator_pub import EstimatorPub
 from qiskit.quantum_info import SparsePauliOp
 
 from qiskit_ibm_runtime.executor_estimator.zne.prepare_zne import prepare_zne
-from qiskit_ibm_runtime.options_models.measure_noise_learning_options import (
-    MeasureNoiseLearningOptions,
-)
-from qiskit_ibm_runtime.options_models.twirling_options import TwirlingOptions
-from qiskit_ibm_runtime.options_models.zne_options import ZneOptions
+from qiskit_ibm_runtime.options_models.measure_noise_learning import MeasureNoiseLearningOptions
+from qiskit_ibm_runtime.options_models.twirling import TwirlingOptions
+from qiskit_ibm_runtime.options_models.zne import ZneOptions
 from qiskit_ibm_runtime.quantum_program import QuantumProgram
 from qiskit_ibm_runtime.quantum_program.quantum_program import SamplexItem
 
+from ...ibm_test_case import IBMTestCase
+
 
 @ddt
-class TestPrepareZneFunction(unittest.TestCase):
+class TestPrepareZneFunction(IBMTestCase):
     """Tests for the prepare_zne function."""
 
     def test_prepare_zne_basic(self):
@@ -282,7 +281,7 @@ class TestPrepareZneFunction(unittest.TestCase):
 
         # Check passthrough data
         passthrough = cast("dict[str, Any]", quantum_program.passthrough_data)
-        self.assertEqual(passthrough["post_processor"]["measure_mitigation"], "True")
+        self.assertTrue(passthrough["post_processor"]["measure_mitigation"])
 
     def test_prepare_zne_multiple_pubs_with_measure_noise_learning(self):
         """Test prepare_zne with multiple pubs and TREX."""

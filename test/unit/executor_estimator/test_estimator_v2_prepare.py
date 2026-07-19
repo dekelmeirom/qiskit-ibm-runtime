@@ -12,7 +12,6 @@
 
 """Unit tests for EstimatorV2 prepare function."""
 
-import unittest
 from typing import Any, cast
 
 import numpy as np
@@ -25,18 +24,17 @@ from qiskit.quantum_info import SparsePauliOp
 from qiskit_ibm_runtime.exceptions import IBMInputValueError
 from qiskit_ibm_runtime.executor_estimator.prepare import prepare
 from qiskit_ibm_runtime.executor_estimator.utils import compute_samplex_arguments
-from qiskit_ibm_runtime.options_models.measure_noise_learning_options import (
-    MeasureNoiseLearningOptions,
-)
-from qiskit_ibm_runtime.options_models.twirling_options import TwirlingOptions
+from qiskit_ibm_runtime.options_models.measure_noise_learning import MeasureNoiseLearningOptions
+from qiskit_ibm_runtime.options_models.twirling import TwirlingOptions
 from qiskit_ibm_runtime.quantum_program import QuantumProgram
 from qiskit_ibm_runtime.quantum_program.quantum_program import SamplexItem
 
+from ...ibm_test_case import IBMTestCase
 from ...utils import combine
 
 
 @ddt
-class TestPrepareFunction(unittest.TestCase):
+class TestPrepareFunction(IBMTestCase):
     """Tests for the prepare function."""
 
     @data(
@@ -281,7 +279,7 @@ class TestPrepareFunction(unittest.TestCase):
         self.assertIsInstance(trex_item, SamplexItem)
 
         passthrough = cast("dict[str, Any]", quantum_program_with_mitigation.passthrough_data)
-        self.assertEqual(passthrough["post_processor"]["measure_mitigation"], "True")
+        self.assertTrue(passthrough["post_processor"]["measure_mitigation"])
 
     def test_prepare_with_measure_noise_learning_trex_circuit_has_only_measurements(self):
         """Test that TREX calibration circuit is based on measurement-only operations.
@@ -459,7 +457,7 @@ class TestPrepareFunction(unittest.TestCase):
 
 
 @ddt
-class TestComputeSamplexArguments(unittest.TestCase):
+class TestComputeSamplexArguments(IBMTestCase):
     """Tests for ``compute_samplex_arguments``."""
 
     @data([(2, 2), (2, 2)], [(2, 2, 1), (2, 2)], [(2, 2), (2, 2, 1)], [(), (2, 2, 1)])
