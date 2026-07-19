@@ -111,7 +111,7 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
     # In case each pub is associated with several items - create a list in which each element
     # is a list containing all relevant items for that pub
     res_step = 1
-    if zne_noise_factors is not None:
+    if mitigation == "zne" and zne_noise_factors is not None:
         # in case of ZNE mitigation with gate folding - each pub is associated with
         # len(zne_noise_factors) result items
         res_step = len(zne_noise_factors)
@@ -123,7 +123,7 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
         len(observables_lists),
         len(param_basis_pairs_lists),
         len(param_shapes_list),
-    } != {len(result)}:
+    } != {len(result[::res_step])}:
         raise ValueError(
             f"Number of circuit metadata items ({len(circuits_metadata)}), "
             f"observables ({len(observables_lists)}), "
@@ -136,13 +136,6 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
     for pub_idx, (item_result, observables_label, param_basis_pairs, param_shape) in enumerate(
         zip(result[::res_step], observables_lists, param_basis_pairs_lists, param_shapes_list)
     ):
-        # In case each pub is associated with several items - create a list in which each element
-        # is a list containing all relevant items for that pub
-        combined_results = []
-        if res_step != 1:
-            for item_idx in range(pub_idx * res_step, (pub_idx + 1) * res_step):
-                combined_results.append(result[item_idx])
-
         # Reconstruct observables and measure_bases
         observables = ObservablesArray(observables_label)
         param_shape = tuple(param_shape)
@@ -158,6 +151,13 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
                 pec_gamma=pec_gammas[pub_idx],
             )
         elif mitigation == "zne":
+            # In case each pub is associated with several items - create a list in which each
+            # element is a list containing all relevant items for that pub
+            combined_results = []
+            if res_step != 1:
+                for item_idx in range(pub_idx * res_step, (pub_idx + 1) * res_step):
+                    combined_results.append(result[item_idx])
+
             pub_result = create_pub_result_zne(
                 combined_results,
                 observables,
@@ -648,7 +648,7 @@ def create_pub_result_zne(
     """Calculate expectation values and errors with ZNE, and return pub result.
 
     Args:
-        item_results: The item result.
+        item_results: The item results.
         observables: The observables to calculate expectation values for.
         param_shape: The shape of the parameter values in the original PUB.
         param_basis_pairs: The map between params ndindexes to basis.
@@ -666,7 +666,13 @@ def create_pub_result_zne(
     Returns:
         An :class:`~qiskit_ibm_runtime.results.EstimatorPubResult` with an empty metadata dict.
     """
-    # The last returned value is the selected extrapolators, that should be saved in the
+    if noise_factors is None or extrapolated_noise_factors is None or extrapolator is None:
+        raise ValueError(
+            "Mitigation method is ZNE, while at least one of the required "
+            "parameters ``(zne_noise_factors, extrapolated_noise_factors, "
+            "extrapolator)`` in the ``passthrough_data`` is ``None``."
+        )
+    # TODO: The last returned value is the selected extrapolators, that should be saved in the
     # metadata
     exp_vals, stds, ensemble_stds, _ = _process_expectation_values_zne(
         item_results,
@@ -694,7 +700,7 @@ def _process_expectation_values_zne(
     extrapolator: list[ExtrapolatorType],
     measure_noise_data: PauliLindbladMap | np.ndarray | None,
 ) -> tuple[npt.NDArray[float], npt.NDArray[float], npt.NDArray[float], list[list[str]]]:
-    """Process expectation values for a single item result.
+    """Process expectation values for a single pub.
 
     Args:
         item_results: List of all the results related to the same pub.
@@ -730,22 +736,23 @@ def _process_expectation_values_zne(
 
     # Combine the data from each noise factor
     noise_amplified_data = []
-    for i, item_result in enumerate(item_results):
+    for item_result in item_results:
         try:
             data = item_result["_meas"]
         except KeyError:
             raise ValueError("Dedicated creg ``'_meas'`` is missing from one of the results.")
 
         if data.ndim != 4:
-            # Shape: (num_randomizations, num_noise_scales, num_configs, shots, num_bits)
+            # Shape: (num_randomizations, num_configs, shots, num_bits)
             # where num_configs is the total number of (param_index, basis) pairs
             raise ValueError(
                 f"one of the ``item_result['_meas']`` has ``{data.ndim}`` axes, expected ``4``."
             )
 
         # Apply measurement flips if present
-        if "measurement_flips._meas" in item_result:
-            data ^= item_result["measurement_flips._meas"]
+        meas_flips = item_result.pop("measurement_flips._meas", None)
+        if meas_flips:
+            data ^= meas_flips
 
         noise_amplified_data.append(data)
 
@@ -865,7 +872,7 @@ def calculate_extrapolated_expectation_values(
                 )
                 noise_scaled_exp_vals.append(term_exp_val)
                 noise_scaled_ensemble_std.append(np.sqrt(term_ensemble_variance))
-                if noise_factors[noise_factor_index] == 1:
+                if noise_factors[noise_factor_index] in [1, 1.0]:
                     non_amplified_twirl_var = term_twirl_variance
 
             extrap_exp_vals, extrap_stds, sel_extrapolators = (
