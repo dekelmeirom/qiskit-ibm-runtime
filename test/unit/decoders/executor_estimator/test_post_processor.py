@@ -360,6 +360,105 @@ class TestEstimatorV2PostProcessor(IBMTestCase):
         # Verify primitive-level metadata contains options
         self.assertEqual(primitive_result.metadata, options_metadata)
 
+    def test_zne_mitigation_fix_expectation_values(self):
+        """Test estimator_v2_post_processor_v0_1 with zne mitigation.
+
+        This test creates two scenarios:
+        1. Without zne _mitigation: raw expectation values from noisy measurements
+        2. With zne mitigation: corrected expectation values using ZNE mitigation
+
+        The test verifies that the expectation values are fixed after mitigation is being applied.
+        """
+        # Create measurement data with simulated errors
+        # For ZZ observable: 00 -> +1, 01 -> -1, 10 -> -1, 11 -> +1
+        observables = [[{"ZZ": 1.0}]]
+        measure_bases = [["ZZ"]]
+        param_basis_pairs = [[([], "ZZ")]]
+        param_shapes = [[]]
+
+        # Simulate 80% correct measurements, 10% bit flip errors
+        # Expected ideal: all 00 -> ev = 1.0
+        # With errors: 82 correct (00), 8 flipped to 01, 8 flipped to 10, 2 flipped to 11
+        # Raw expectation: (82 + 2 - 8 - 8) / 100 = 0.68
+        meas_data = np.zeros((1, 1, 100, 2), dtype=bool)
+        # Add bit flip errors: flip first bit on 8 shots, second bit on 8 shots, both on 2 shots
+        meas_data[0, 0, 82:90, 0] = True  # flip first bit
+        meas_data[0, 0, 90:98, 1] = True  # flip second bit
+        meas_data[0, 0, 98:100, :] = True  # flip both bits
+
+        # Test 1: Without mitigation
+        result_no_mitigation = self._create_result(
+            meas_data,
+            observables=observables,
+            measure_bases=measure_bases,
+            param_basis_pairs=param_basis_pairs,
+            param_shapes=param_shapes,
+        )
+
+        primitive_result_no_mitigation = estimator_v2_post_processor_v0_1(result_no_mitigation)
+        ev_no_mitigation = primitive_result_no_mitigation[0].data.evs[0]
+
+        # Expected: (82 + 2 - 8 - 8) / 100 = 0.68
+        self.assertAlmostEqual(ev_no_mitigation, 0.68, places=5)
+
+        # Test 2: With zne mitigation
+        # noise factor 2 - 20% errors
+        meas_data_factor2 = np.zeros((1, 1, 100, 2), dtype=bool)
+        # Add bit flip errors: flip first bit on 16 shots, second bit on 16 shots, both on 4 shots
+        meas_data_factor2[0, 0, 64:80, 0] = True  # flip first bit
+        meas_data_factor2[0, 0, 80:96, 1] = True  # flip second bit
+        meas_data_factor2[0, 0, 96:100, :] = True  # flip both bits
+
+        # noise factor 3 - 30% errors
+        meas_data_factor3 = np.zeros((1, 1, 100, 2), dtype=bool)
+        # Add bit flip errors: flip first bit on 24 shots, second bit on 24 shots, both on 6 shots
+        meas_data_factor3[0, 0, 46:70, 0] = True  # flip first bit
+        meas_data_factor3[0, 0, 70:94, 1] = True  # flip second bit
+        meas_data_factor3[0, 0, 94:100, :] = True  # flip both bits
+
+        result_data_with_mitigation = [
+            QuantumProgramItemResult({"_meas": meas_data}),
+            QuantumProgramItemResult({"_meas": meas_data_factor2}),
+            QuantumProgramItemResult({"_meas": meas_data_factor3}),
+        ]
+
+        # Passthrough data should only contain metadata for actual pubs, not calibration circuit
+        passthrough_data_with_mitigation = {
+            "post_processor": {
+                "version": "v0.1",
+                "circuits_metadata": [None],
+                "observables": observables,
+                "measure_bases": measure_bases,
+                "param_basis_pairs": param_basis_pairs,
+                "param_shapes": param_shapes,
+                "measure_mitigation": False,
+                "mitigation": "zne",
+                "zne_noise_factors": [1, 2, 3],
+                "extrapolated_noise_factors": [0],
+                "extrapolator": ["linear"],
+            },
+        }
+
+        result_with_mitigation = QuantumProgramResult(
+            data=result_data_with_mitigation,
+            metadata=None,
+            passthrough_data=passthrough_data_with_mitigation,
+        )
+        result_with_mitigation._semantic_role = "estimator_v2"
+
+        primitive_result_with_mitigation = estimator_v2_post_processor_v0_1(result_with_mitigation)
+        ev_with_mitigation = primitive_result_with_mitigation[0].data.evs[0]
+
+        # Verify that after mitigation the expectation value is back to 1
+        self.assertAlmostEqual(ev_with_mitigation, 1.0, places=5)
+
+        # Verify that only one pub result is returned (calibration circuit excluded)
+        self.assertEqual(
+            len(primitive_result_with_mitigation),
+            1,
+            msg="Should return only one pub result",
+        )
+
 
 @ddt
 class TestCreatePubResult(IBMTestCase):
