@@ -69,9 +69,14 @@ class TestPrepareZneFunction(IBMTestCase):
                 np.array(noise_factors),
             )
         )
-        self.assertIn("item_id", passthrough["post_processor"])
-        expected_map = [(0, 1.0), (0, 2.0), (0, 3.0)]
-        self.assertEqual(passthrough["post_processor"]["item_id"], expected_map)
+        extrapolated_noise_factors = passthrough["post_processor"]["extrapolated_noise_factors"]
+        expected_extrapolated_noise_factors = [0.0, 1.0, 2.0, 3.0]
+        self.assertTrue(
+            np.array_equal(extrapolated_noise_factors, expected_extrapolated_noise_factors)
+        )
+        extrapolator = passthrough["post_processor"]["extrapolator"]
+        expected_extrapolator = ("exponential", "linear")
+        self.assertEqual(extrapolator, expected_extrapolator)
 
     def test_prepare_zne_multiple_pubs(self):
         """Test prepare_zne with multiple pubs."""
@@ -122,9 +127,6 @@ class TestPrepareZneFunction(IBMTestCase):
                 np.array(noise_factors),
             )
         )
-        self.assertIn("item_id", passthrough["post_processor"])
-        expected_map = [(0, 1.0), (0, 2.0), (1, 1.0), (1, 2.0)]
-        self.assertEqual(passthrough["post_processor"]["item_id"], expected_map)
 
     def test_prepare_zne_with_single_noise_factor(self):
         """Test prepare_zne with a single noise factor."""
