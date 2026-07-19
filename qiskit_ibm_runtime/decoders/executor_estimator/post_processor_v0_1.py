@@ -751,7 +751,7 @@ def _process_expectation_values_zne(
 
         # Apply measurement flips if present
         meas_flips = item_result.pop("measurement_flips._meas", None)
-        if meas_flips:
+        if meas_flips is not None:
             data ^= meas_flips
 
         noise_amplified_data.append(data)
