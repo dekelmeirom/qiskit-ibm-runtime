@@ -454,3 +454,22 @@ class TestPreparePeaFunction(IBMTestCase):
         self.assertEqual(
             passthrough["post_processor"]["param_shapes"][0], pub.parameter_values.shape
         )
+
+    def test_prepare_pea_raises_error_with_less_than_2_noise_factors(self):
+        """Test that prepare_pea raises when noise_factors has less than 2 points."""
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+
+        observable = SparsePauliOp.from_list([("ZZ", 1)])
+        pub = EstimatorPub.coerce((circuit, observable))
+
+        zne_options = ZneOptions()
+        zne_options.amplifier = "pea"
+        zne_options.noise_factors = [1.5]
+
+        twirling_options = TwirlingOptions()
+        twirling_options.enable_gates = True
+
+        with self.assertRaisesRegex(IBMInputValueError, "Must have at least two noise factors"):
+            prepare_pea([pub], twirling_options, 1024, zne_options, {})

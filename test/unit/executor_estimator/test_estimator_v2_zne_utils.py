@@ -21,6 +21,7 @@ from qiskit.circuit import Parameter
 from qiskit.primitives.containers.estimator_pub import EstimatorPub
 from qiskit.quantum_info import SparsePauliOp
 
+from qiskit_ibm_runtime.exceptions import IBMInputValueError
 from qiskit_ibm_runtime.executor_estimator.zne.prepare_zne import prepare_zne
 from qiskit_ibm_runtime.options_models.measure_noise_learning import MeasureNoiseLearningOptions
 from qiskit_ibm_runtime.options_models.twirling import TwirlingOptions
@@ -142,13 +143,8 @@ class TestPrepareZneFunction(IBMTestCase):
         zne_options.amplifier = "gate_folding_back"
         zne_options.noise_factors = noise_factors
         shots = 1024
-        quantum_program = prepare_zne([pub], TwirlingOptions(), shots, zne_options)
-
-        # Should have 1 item for single pub and single noise factor
-        self.assertEqual(len(quantum_program.items), 1)
-
-        item = cast("SamplexItem", quantum_program.items[0])
-        self.assertIsInstance(item, SamplexItem)
+        with self.assertRaisesRegex(IBMInputValueError, "Must have at least two noise factors"):
+            prepare_zne([pub], TwirlingOptions(), shots, zne_options)
 
     def test_prepare_zne_with_empty_noise_factors_list(self):
         """Test prepare_zne behavior with empty noise_factors list."""
@@ -164,10 +160,8 @@ class TestPrepareZneFunction(IBMTestCase):
         zne_options.amplifier = "gate_folding"
         zne_options.noise_factors = noise_factors
         shots = 1024
-        quantum_program = prepare_zne([pub], TwirlingOptions(), shots, zne_options)
-
-        # Should have 0 items for empty noise_factors
-        self.assertEqual(len(quantum_program.items), 0)
+        with self.assertRaisesRegex(IBMInputValueError, "Must have at least two noise factors"):
+            prepare_zne([pub], TwirlingOptions(), shots, zne_options)
 
     @data("gate_folding", "gate_folding_front", "gate_folding_back")
     def test_prepare_zne_with_different_folding_methods(self, folding_method):
@@ -328,3 +322,20 @@ class TestPrepareZneFunction(IBMTestCase):
         trex_item = quantum_program.items[-1]
         self.assertIsInstance(trex_item, SamplexItem)
         self.assertEqual(trex_item.shape, (32,))
+
+    def test_prepare_zne_raises_error_with_less_than_2_noise_factors(self):
+        """Test that prepare_zne raises when noise_factors has less than 2 points."""
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+
+        observable = SparsePauliOp.from_list([("ZZ", 1)])
+        pub = EstimatorPub.coerce((circuit, observable))
+
+        zne_options = ZneOptions()
+        zne_options.amplifier = "gate_folding"
+        zne_options.noise_factors = [1.5]
+        shots = 1024
+
+        with self.assertRaisesRegex(IBMInputValueError, "Must have at least two noise factors"):
+            prepare_zne([pub], TwirlingOptions(), shots, zne_options)

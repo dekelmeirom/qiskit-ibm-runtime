@@ -121,6 +121,7 @@ class ZneOptions:
     The default depends on the amplifier method - the default for pea is
     :class:.~PEA_DEFAULT_NOISE_FACTORS` and the default for the other methods
     is :class:.~ZNE_DEFAULT_NOISE_FACTORS`.
+    Must contain at least two points in order to do an extrapolation.
     """
 
     extrapolator: ExtrapolatorType | Sequence[ExtrapolatorType] = ("exponential", "linear")

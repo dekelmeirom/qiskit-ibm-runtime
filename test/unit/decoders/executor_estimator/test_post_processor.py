@@ -1073,15 +1073,17 @@ class TestProcessExpectationValuesPEA(IBMTestCase):
         noise_factors = [1.0, 2.0]
         extrapolated_noise_factors = [0.0]
 
-        evs, stds, ensemble_stds, sel_extrapolators = _process_expectation_values_pea(
-            item_result=item_result,
-            observables=ObservablesArray({"ZZ": 1.0}),
-            param_shape=(),
-            param_basis_pairs=[((), "ZZ")],
-            noise_factors=noise_factors,
-            extrapolated_noise_factors=extrapolated_noise_factors,
-            extrapolator=["linear"],
-            measure_noise_data=None,
+        evs, ensemble_stds, nf_evs, nf_ensemble_stds, nf_stds, sel_extrapolators = (
+            _process_expectation_values_pea(
+                item_result=item_result,
+                observables=ObservablesArray({"ZZ": 1.0}),
+                param_shape=(),
+                param_basis_pairs=[((), "ZZ")],
+                noise_factors=noise_factors,
+                extrapolated_noise_factors=extrapolated_noise_factors,
+                extrapolator=["linear"],
+                measure_noise_data=None,
+            )
         )
 
         # evs shape: (len(extrapolated_noise_factors),) = (1,) for scalar observable
@@ -1113,15 +1115,17 @@ class TestProcessExpectationValuesPEA(IBMTestCase):
         noise_factors = [1.0, 2.0]
         extrapolated_noise_factors = [0.0]
 
-        evs, stds, ensemble_stds, sel_extrapolators = _process_expectation_values_pea(
-            item_result=item_result,
-            observables=ObservablesArray({"ZZ": 1.0}),
-            param_shape=(),
-            param_basis_pairs=[((), "ZZ")],
-            noise_factors=noise_factors,
-            extrapolated_noise_factors=extrapolated_noise_factors,
-            extrapolator=["linear"],
-            measure_noise_data=None,
+        evs, ensemble_stds, nf_evs, nf_ensemble_stds, nf_stds, sel_extrapolators = (
+            _process_expectation_values_pea(
+                item_result=item_result,
+                observables=ObservablesArray({"ZZ": 1.0}),
+                param_shape=(),
+                param_basis_pairs=[((), "ZZ")],
+                noise_factors=noise_factors,
+                extrapolated_noise_factors=extrapolated_noise_factors,
+                extrapolator=["linear"],
+                measure_noise_data=None,
+            )
         )
 
         # linear fit through (1, 1.0) and (2, 0.0) gives slope=-1, intercept=2
@@ -1139,15 +1143,17 @@ class TestProcessExpectationValuesPEA(IBMTestCase):
         noise_factors = [1.0, 2.0]
         extrapolated_noise_factors = [0.0]
 
-        evs, stds, ensemble_stds, sel_extrapolators = _process_expectation_values_pea(
-            item_result=item_result,
-            observables=observables,
-            param_shape=(),
-            param_basis_pairs=[((), "ZZ"), ((), "XX")],
-            noise_factors=noise_factors,
-            extrapolated_noise_factors=extrapolated_noise_factors,
-            extrapolator=["linear"],
-            measure_noise_data=None,
+        evs, ensemble_stds, nf_evs, nf_ensemble_stds, nf_stds, sel_extrapolators = (
+            _process_expectation_values_pea(
+                item_result=item_result,
+                observables=observables,
+                param_shape=(),
+                param_basis_pairs=[((), "ZZ"), ((), "XX")],
+                noise_factors=noise_factors,
+                extrapolated_noise_factors=extrapolated_noise_factors,
+                extrapolator=["linear"],
+                measure_noise_data=None,
+            )
         )
 
         # All-zero measurements give ev=+1 at both noise factors; linear fit to [1.0, 1.0]
@@ -1184,15 +1190,17 @@ class TestProcessExpectationValuesPEA(IBMTestCase):
         noise_factors = [1.0, 2.0, 3.0]
         extrapolated_noise_factors = [0.0]
 
-        evs, stds, ensemble_stds, sel_extrapolators = _process_expectation_values_pea(
-            item_result=item_result,
-            observables=observables,
-            param_shape=param_shape,
-            param_basis_pairs=self.get_param_basis_pairs(observables, param_shape),
-            noise_factors=noise_factors,
-            extrapolated_noise_factors=extrapolated_noise_factors,
-            extrapolator=["linear"],
-            measure_noise_data=None,
+        evs, ensemble_stds, nf_evs, nf_ensemble_stds, nf_stds, sel_extrapolators = (
+            _process_expectation_values_pea(
+                item_result=item_result,
+                observables=observables,
+                param_shape=param_shape,
+                param_basis_pairs=self.get_param_basis_pairs(observables, param_shape),
+                noise_factors=noise_factors,
+                extrapolated_noise_factors=extrapolated_noise_factors,
+                extrapolator=["linear"],
+                measure_noise_data=None,
+            )
         )
 
         self.assertTrue(
@@ -1226,23 +1234,27 @@ class TestProcessExpectationValuesPEA(IBMTestCase):
         noise_factors = [1.0, 2.0, 3.0]
         extrapolated_noise_factors = [0.0]
 
-        evs, stds, ensemble_stds, sel_extrapolators = _process_expectation_values_pea(
-            item_result=item_result,
-            observables=observables,
-            param_shape=param_shape,
-            param_basis_pairs=param_basis_pairs,
-            noise_factors=noise_factors,
-            extrapolated_noise_factors=extrapolated_noise_factors,
-            extrapolator=["linear"],
-            measure_noise_data=None,
+        evs, ensemble_stds, nf_evs, nf_ensemble_stds, nf_stds, sel_extrapolators = (
+            _process_expectation_values_pea(
+                item_result=item_result,
+                observables=observables,
+                param_shape=param_shape,
+                param_basis_pairs=param_basis_pairs,
+                noise_factors=noise_factors,
+                extrapolated_noise_factors=extrapolated_noise_factors,
+                extrapolator=["linear"],
+                measure_noise_data=None,
+            )
         )
 
         expected_broadcast_shape = np.broadcast_shapes(obs_shape, param_shape)
-        # evs, stds and ensemble_stds all have leading axis for num extrapolated noise factors
+        # evs and ensemble_stds have leading axis for num extrapolated noise factors
         expected_evs_shape = (len(extrapolated_noise_factors),) + expected_broadcast_shape
         self.assertTupleEqual(evs.shape, expected_evs_shape)
-        self.assertTupleEqual(stds.shape, expected_evs_shape)
         self.assertTupleEqual(ensemble_stds.shape, expected_evs_shape)
+        # nf_evs, nf_ensemble_stds and nf_stds have leading axis for num noise factors
+        expected_nf_shape = (len(noise_factors),) + expected_broadcast_shape
+        self.assertTupleEqual(nf_evs.shape, expected_nf_shape)
         # sel_extrapolators is a nested list with shape (output_shape, num_terms_per_observable)
         self.assertEqual(len(sel_extrapolators), int(np.prod(expected_broadcast_shape)))
 
@@ -1256,20 +1268,22 @@ class TestProcessExpectationValuesPEA(IBMTestCase):
         noise_factors = [1.0, 2.0, 3.0]
         extrapolated_noise_factors = [0.0, 0.5, 1.0]
 
-        evs, stds, ensemble_stds, sel_extrapolators = _process_expectation_values_pea(
-            item_result=item_result,
-            observables=ObservablesArray({"ZZ": 1.0}),
-            param_shape=(),
-            param_basis_pairs=[((), "ZZ")],
-            noise_factors=noise_factors,
-            extrapolated_noise_factors=extrapolated_noise_factors,
-            extrapolator=["linear"],
-            measure_noise_data=None,
+        evs, ensemble_stds, nf_evs, nf_ensemble_stds, nf_stds, sel_extrapolators = (
+            _process_expectation_values_pea(
+                item_result=item_result,
+                observables=ObservablesArray({"ZZ": 1.0}),
+                param_shape=(),
+                param_basis_pairs=[((), "ZZ")],
+                noise_factors=noise_factors,
+                extrapolated_noise_factors=extrapolated_noise_factors,
+                extrapolator=["linear"],
+                measure_noise_data=None,
+            )
         )
 
         # Three extrapolation points -> leading dimension is 3
         self.assertEqual(evs.shape[0], len(extrapolated_noise_factors))
-        self.assertEqual(stds.shape[0], len(extrapolated_noise_factors))
+        self.assertEqual(ensemble_stds.shape[0], len(extrapolated_noise_factors))
         # All-zero measurements at every noise factor: linear fit is flat at 1.0
         self.assertTrue(np.allclose(evs, 1.0), msg=f"Expected all 1.0, got {evs}")
 
@@ -1282,15 +1296,17 @@ class TestProcessExpectationValuesPEA(IBMTestCase):
         noise_factors = [1.0, 2.0]
         extrapolated_noise_factors = [0.0]
 
-        evs, stds, ensemble_stds, sel_extrapolators = _process_expectation_values_pea(
-            item_result=item_result,
-            observables=ObservablesArray({"ZZ": 1.0}),
-            param_shape=(),
-            param_basis_pairs=[((), "ZZ")],
-            noise_factors=noise_factors,
-            extrapolated_noise_factors=extrapolated_noise_factors,
-            extrapolator=["linear"],
-            measure_noise_data=None,
+        evs, ensemble_stds, nf_evs, nf_ensemble_stds, nf_stds, sel_extrapolators = (
+            _process_expectation_values_pea(
+                item_result=item_result,
+                observables=ObservablesArray({"ZZ": 1.0}),
+                param_shape=(),
+                param_basis_pairs=[((), "ZZ")],
+                noise_factors=noise_factors,
+                extrapolated_noise_factors=extrapolated_noise_factors,
+                extrapolator=["linear"],
+                measure_noise_data=None,
+            )
         )
 
         # sel_extrapolators is a nested list: [per_bcast_index][per_term][per_extrap_point]
@@ -1322,7 +1338,7 @@ class TestProcessExpectationValuesPEA(IBMTestCase):
         extrapolated_noise_factors = [0.0]
 
         # "linear" first: linear fit is valid -> "linear" selected
-        evs_first, _, _, sel_first = _process_expectation_values_pea(
+        evs_first, _, _, _, _, sel_first = _process_expectation_values_pea(
             item_result=QuantumProgramItemResult({"_meas": data.copy()}),
             observables=ObservablesArray({"ZZ": 1.0}),
             param_shape=(),
@@ -1337,7 +1353,7 @@ class TestProcessExpectationValuesPEA(IBMTestCase):
 
         # "exponential" first: exponential fit is rejected (value way outside [-1,1]);
         # selection falls through to "linear" which is valid
-        evs_second, _, _, sel_second = _process_expectation_values_pea(
+        evs_second, _, _, _, _, sel_second = _process_expectation_values_pea(
             item_result=QuantumProgramItemResult({"_meas": data.copy()}),
             observables=ObservablesArray({"ZZ": 1.0}),
             param_shape=(),
@@ -1415,7 +1431,7 @@ class TestProcessExpectationValuesZNE(IBMTestCase):
             )
 
     def test_return_shape_zne(self):
-        """Test that ZNE returns a 4-tuple and that the last element contains extrapolator names."""
+        """Test that ZNE returns a 6-tuple and that the last element contains extrapolator names."""
         data_shape = (1, 1, 10, 2)
         item_results = self._make_item_results(3, data_shape)
 
@@ -1430,13 +1446,14 @@ class TestProcessExpectationValuesZNE(IBMTestCase):
             measure_noise_data=None,
         )
 
-        self.assertEqual(len(result), 4)
-        exp_vals, stds, ensemble_stds, sel_extrapolators = result
+        self.assertEqual(len(result), 6)
+        exp_vals, ensemble_stds, nf_evs, nf_ensemble_stds, nf_stds, sel_extrapolators = result
         # With one extrapolated noise factor and scalar output, shape should be (1,)
         self.assertEqual(exp_vals.shape, (1,))
-        self.assertEqual(stds.shape, (1,))
         # ensemble_stds has the same shape as exp_vals (one per extrapolated noise factor)
         self.assertEqual(ensemble_stds.shape, (1,))
+        # nf_evs has leading axis for noise factors
+        self.assertEqual(nf_evs.shape, (3,))
         # sel_extrapolators is a list of prod(output_shape) elements; each is a list of per-term
         # numpy arrays of shape (num_extrapolated_noise_factors,) with extrapolator name strings
         self.assertEqual(len(sel_extrapolators), 1)  # one bcast_index for scalar observable
@@ -1451,15 +1468,17 @@ class TestProcessExpectationValuesZNE(IBMTestCase):
 
         observables = ObservablesArray([{"ZZ": 1.0}, {"XX": 1.0}])
 
-        exp_vals, stds, ensemble_stds, sel_extrapolators = _process_expectation_values_zne(
-            item_results=item_results,
-            observables=observables,
-            param_shape=(),
-            param_basis_pairs=[((), "ZZ"), ((), "XX")],
-            noise_factors=[1.0, 2.0, 3.0],
-            extrapolated_noise_factors=[0.0],
-            extrapolator=["linear"],
-            measure_noise_data=None,
+        exp_vals, ensemble_stds, nf_evs, nf_ensemble_stds, nf_stds, sel_extrapolators = (
+            _process_expectation_values_zne(
+                item_results=item_results,
+                observables=observables,
+                param_shape=(),
+                param_basis_pairs=[((), "ZZ"), ((), "XX")],
+                noise_factors=[1.0, 2.0, 3.0],
+                extrapolated_noise_factors=[0.0],
+                extrapolator=["linear"],
+                measure_noise_data=None,
+            )
         )
 
         # All-zero measurements give +1 for both ZZ and XX; linear fit of constant +1 → +1 at 0
@@ -1485,7 +1504,7 @@ class TestProcessExpectationValuesZNE(IBMTestCase):
         # Identical all-zero data for each noise factor → constant curves → extrapolation = same
         item_results = self._make_item_results(3, (1, num_configs, 10, num_qubits))
 
-        exp_vals, _, _, _ = _process_expectation_values_zne(
+        exp_vals, _, _, _, _, _ = _process_expectation_values_zne(
             item_results=item_results,
             observables=observables,
             param_shape=param_shape,
@@ -1525,7 +1544,7 @@ class TestProcessExpectationValuesZNE(IBMTestCase):
                 QuantumProgramItemResult({"_meas": twirled_data, "measurement_flips._meas": flips})
             )
 
-        exp_vals, _, _, _ = _process_expectation_values_zne(
+        exp_vals, _, _, _, _, _ = _process_expectation_values_zne(
             item_results=item_results,
             observables=observables,
             param_shape=param_shape,
@@ -1563,23 +1582,27 @@ class TestProcessExpectationValuesZNE(IBMTestCase):
         extrapolated_noise_factors = [0.0, 0.5]
         noise_factors = [1.0, 2.0, 3.0]
 
-        exp_vals, stds, ensemble_stds, sel_extrapolators = _process_expectation_values_zne(
-            item_results=item_results,
-            observables=observables,
-            param_shape=param_shape,
-            param_basis_pairs=param_basis_pairs,
-            noise_factors=noise_factors,
-            extrapolated_noise_factors=extrapolated_noise_factors,
-            extrapolator=["linear"],
-            measure_noise_data=None,
+        exp_vals, ensemble_stds, nf_evs, nf_ensemble_stds, nf_stds, sel_extrapolators = (
+            _process_expectation_values_zne(
+                item_results=item_results,
+                observables=observables,
+                param_shape=param_shape,
+                param_basis_pairs=param_basis_pairs,
+                noise_factors=noise_factors,
+                extrapolated_noise_factors=extrapolated_noise_factors,
+                extrapolator=["linear"],
+                measure_noise_data=None,
+            )
         )
 
         base_shape = np.broadcast_shapes(obs_shape, param_shape)
         expected_shape = (num_extrapolated,) + base_shape
         self.assertTupleEqual(exp_vals.shape, expected_shape)
-        self.assertTupleEqual(stds.shape, expected_shape)
         # ensemble_stds has the same shape as exp_vals (one entry per extrapolated noise factor)
         self.assertTupleEqual(ensemble_stds.shape, expected_shape)
+        # nf_evs has leading axis for noise factors
+        expected_nf_shape = (len(noise_factors),) + base_shape
+        self.assertTupleEqual(nf_evs.shape, expected_nf_shape)
         # sel_extrapolators has one entry per broadcast index (i.e. prod of output_shape)
         self.assertEqual(len(sel_extrapolators), int(np.prod(base_shape)))
 
@@ -1588,7 +1611,7 @@ class TestProcessExpectationValuesZNE(IBMTestCase):
         data_shape = (1, 1, 10, 2)
         item_results = self._make_item_results(3, data_shape)
 
-        _, _, _, sel_extrapolators = _process_expectation_values_zne(
+        _, _, _, _, _, sel_extrapolators = _process_expectation_values_zne(
             item_results=item_results,
             observables=ObservablesArray({"ZZ": 1.0}),
             param_shape=(),
@@ -1618,7 +1641,7 @@ class TestProcessExpectationValuesZNE(IBMTestCase):
             QuantumProgramItemResult({"_meas": data_nf3}),
         ]
 
-        exp_vals, _, _, sel_extrapolators = _process_expectation_values_zne(
+        exp_vals, _, _, _, _, sel_extrapolators = _process_expectation_values_zne(
             item_results=item_results,
             observables=ObservablesArray({"ZZ": 1.0}),
             param_shape=(),
@@ -1641,17 +1664,19 @@ class TestProcessExpectationValuesZNE(IBMTestCase):
         item_results = self._make_item_results(3, data_shape)
         extrapolated_noise_factors = [0.0, 0.5, 1.0]
 
-        exp_vals, stds, _, _ = _process_expectation_values_zne(
-            item_results=item_results,
-            observables=ObservablesArray({"ZZ": 1.0}),
-            param_shape=(),
-            param_basis_pairs=[((), "ZZ")],
-            noise_factors=[1.0, 2.0, 3.0],
-            extrapolated_noise_factors=extrapolated_noise_factors,
-            extrapolator=["linear"],
-            measure_noise_data=None,
+        exp_vals, ensemble_stds, nf_evs, nf_ensemble_stds, nf_stds, sel_extrapolators = (
+            _process_expectation_values_zne(
+                item_results=item_results,
+                observables=ObservablesArray({"ZZ": 1.0}),
+                param_shape=(),
+                param_basis_pairs=[((), "ZZ")],
+                noise_factors=[1.0, 2.0, 3.0],
+                extrapolated_noise_factors=extrapolated_noise_factors,
+                extrapolator=["linear"],
+                measure_noise_data=None,
+            )
         )
 
         # One result per extrapolated noise factor
         self.assertEqual(exp_vals.shape[0], len(extrapolated_noise_factors))
-        self.assertEqual(stds.shape[0], len(extrapolated_noise_factors))
+        self.assertEqual(ensemble_stds.shape[0], len(extrapolated_noise_factors))

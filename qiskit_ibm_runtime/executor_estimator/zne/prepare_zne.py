@@ -83,6 +83,7 @@ def prepare_zne(
             reserved classical register name ``_meas``.
         IBMInputValueError: If the amplifier in the ZneOptions is not one of ``gate_folding``,
         ``gate_folding_front`` or ``gate_folding_back``.
+        IBMInputValueError: If noise_factors contains less than two points.
     """
     if measure_noise_learning is not None and not twirling_options.enable_measure:
         raise ValueError("Measure noise learning requires enabling twirling for measurements.")
@@ -95,6 +96,11 @@ def prepare_zne(
         noise_factors = np.array(ZNE_DEFAULT_NOISE_FACTORS)
     else:
         noise_factors = np.array(zne_options.noise_factors)
+
+    if len(noise_factors) < 2:
+        raise IBMInputValueError(
+            "Must have at least two noise factors in order to do an extrapolation."
+        )
 
     extrapolated_noise_factors = zne_options.extrapolated_noise_factors
     if extrapolated_noise_factors == "auto":

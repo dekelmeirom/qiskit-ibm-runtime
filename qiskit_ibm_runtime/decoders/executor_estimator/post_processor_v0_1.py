@@ -128,7 +128,8 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
             f"Number of circuit metadata items ({len(circuits_metadata)}), "
             f"observables ({len(observables_lists)}), "
             f"param_basis_pairs ({len(param_basis_pairs_lists)}), "
-            f"param_shapes ({len(param_shapes_list)}), and results ({len(result)}) are not equal."
+            f"param_shapes ({len(param_shapes_list)}), and results "
+            f"({len(result[::res_step])}) are not equal."
         )
 
     # Build EstimatorPubResult for each pub
@@ -154,9 +155,8 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
             # In case each pub is associated with several items - create a list in which each
             # element is a list containing all relevant items for that pub
             combined_results = []
-            if res_step != 1:
-                for item_idx in range(pub_idx * res_step, (pub_idx + 1) * res_step):
-                    combined_results.append(result[item_idx])
+            for item_idx in range(pub_idx * res_step, (pub_idx + 1) * res_step):
+                combined_results.append(result[item_idx])
 
             pub_result = create_pub_result_zne(
                 combined_results,
@@ -543,7 +543,14 @@ def create_pub_result_pea(
         )
     # TODO: The last returned value is the selected extrapolators, that should be saved in the
     # metadata
-    exp_vals, stds, ensemble_stds, _ = _process_expectation_values_pea(
+    (
+        extrapolated_exp_vals,
+        extrapolated_ensemble_stds,
+        noise_factors_exp_vals,
+        noise_factors_ensemble_stds,
+        noise_factors_stds,
+        selected_extrapolators,
+    ) = _process_expectation_values_pea(
         item_result,
         observables,
         param_shape,
@@ -553,8 +560,11 @@ def create_pub_result_pea(
         extrapolator,
         measure_noise_data,
     )
+    # TODO: add the noise_factors result data with the keywords as the legacy Estimator had
     data_bin = DataBin(
-        evs=exp_vals, stds=stds, ensemble_standard_error=ensemble_stds, shape=exp_vals.shape
+        evs=extrapolated_exp_vals,
+        ensemble_standard_error=extrapolated_ensemble_stds,
+        shape=extrapolated_exp_vals.shape,
     )
     return EstimatorPubResult(data=data_bin)
 
@@ -568,7 +578,14 @@ def _process_expectation_values_pea(
     extrapolated_noise_factors: float | int | list[float],
     extrapolator: list[ExtrapolatorType],
     measure_noise_data: PauliLindbladMap | np.ndarray | None,
-) -> tuple[npt.NDArray[float], npt.NDArray[float], npt.NDArray[float], list[list[str]]]:
+) -> tuple[
+    npt.NDArray[float],
+    npt.NDArray[float],
+    npt.NDArray[float],
+    npt.NDArray[float],
+    npt.NDArray[float],
+    list[list[str]],
+]:
     """Process expectation values for a single item result.
 
     Args:
@@ -590,10 +607,16 @@ def _process_expectation_values_pea(
             PauliLindbladMap of a noise model learned upfront, or a result of a calibration circuit.
 
     Returns:
-        A tuple ``(exp_vals, stds, ensemble_stds, selected_extrapolators)``, where ``exp_vals``
-        are expectation values, ``stds`` are standard deviations, and ``ensemble_stds`` are
-        ensemble standard errors. ``selected_extrapolators`` is a list of the valid extrapolators
-        used to extrapolate the data.
+        A tuple ``(extrapolated_exp_vals, extrapolated_ensemble_stds, noise_factors_exp_vals,
+        noise_factors_ensemble_stds, noise_factors_stds, selected_extrapolators)``, where
+        ``extrapolated_exp_vals`` are expectation values evaluated at the extrapolated_noise_factors
+        points, ``extrapolated_ensemble_stds`` are ensemble standard errors evaluated at the
+        extrapolated_noise_factors points, ``noise_factors_exp_vals`` are expectation values
+        calculated at the noise_factors points, ``noise_factors_ensemble_stds`` are ensemble
+        standard errors calculated at the noise_factors points, ``noise_factors_stds`` are
+        standard errors calculated at the noise_factors points and ``selected_extrapolators`` are
+        the extrapolators are the valid extrapolators used to extrapolate the data for each
+        observable term.
 
     Raises:
         ValueError: If ``item_result`` has no ``'_meas'`` key.
@@ -674,7 +697,14 @@ def create_pub_result_zne(
         )
     # TODO: The last returned value is the selected extrapolators, that should be saved in the
     # metadata
-    exp_vals, stds, ensemble_stds, _ = _process_expectation_values_zne(
+    (
+        extrapolated_exp_vals,
+        extrapolated_ensemble_stds,
+        noise_factors_exp_vals,
+        noise_factors_ensemble_stds,
+        noise_factors_stds,
+        selected_extrapolators,
+    ) = _process_expectation_values_zne(
         item_results,
         observables,
         param_shape,
@@ -684,8 +714,11 @@ def create_pub_result_zne(
         extrapolator,
         measure_noise_data,
     )
+    # TODO: add the noise_factors result data with the keywords as the legacy Estimator had
     data_bin = DataBin(
-        evs=exp_vals, stds=stds, ensemble_standard_error=ensemble_stds, shape=exp_vals.shape
+        evs=extrapolated_exp_vals,
+        ensemble_standard_error=extrapolated_ensemble_stds,
+        shape=extrapolated_exp_vals.shape,
     )
     return EstimatorPubResult(data=data_bin)
 
@@ -699,7 +732,14 @@ def _process_expectation_values_zne(
     extrapolated_noise_factors: float | int | list[float],
     extrapolator: list[ExtrapolatorType],
     measure_noise_data: PauliLindbladMap | np.ndarray | None,
-) -> tuple[npt.NDArray[float], npt.NDArray[float], npt.NDArray[float], list[list[str]]]:
+) -> tuple[
+    npt.NDArray[float],
+    npt.NDArray[float],
+    npt.NDArray[float],
+    npt.NDArray[float],
+    npt.NDArray[float],
+    list[list[str]],
+]:
     """Process expectation values for a single pub.
 
     Args:
@@ -720,10 +760,16 @@ def _process_expectation_values_zne(
             PauliLindbladMap of a noise model learned upfront, or a result of a calibration circuit.
 
     Returns:
-        A tuple ``(exp_vals, stds, ensemble_stds, selected_extrapolators)``, where ``exp_vals``
-        are expectation values, ``stds`` are standard deviations, and ``ensemble_stds`` are
-        ensemble standard errors. ``selected_extrapolators`` is a list of the valid extrapolators
-        used to extrapolate the data.
+        A tuple ``(extrapolated_exp_vals, extrapolated_ensemble_stds, noise_factors_exp_vals,
+        noise_factors_ensemble_stds, noise_factors_stds, selected_extrapolators)``, where
+        ``extrapolated_exp_vals`` are expectation values evaluated at the extrapolated_noise_factors
+        points, ``extrapolated_ensemble_stds`` are ensemble standard errors evaluated at the
+        extrapolated_noise_factors points, ``noise_factors_exp_vals`` are expectation values
+        calculated at the noise_factors points, ``noise_factors_ensemble_stds`` are ensemble
+        standard errors calculated at the noise_factors points, ``noise_factors_stds`` are
+        standard errors calculated at the noise_factors points and ``selected_extrapolators`` are
+        the extrapolators are the valid extrapolators used to extrapolate the data for each
+        observable term.
 
     Raises:
         ValueError: If ``item_result`` has no ``'_meas'`` key.
@@ -777,7 +823,14 @@ def calculate_extrapolated_expectation_values(
     extrapolated_noise_factors: list[float],
     extrapolator: list[ExtrapolatorType],
     measure_noise_data: PauliLindbladMap | np.ndarray | None,
-) -> tuple[npt.NDArray[float], npt.NDArray[float], npt.NDArray[float], list[list[str]]]:
+) -> tuple[
+    npt.NDArray[float],
+    npt.NDArray[float],
+    npt.NDArray[float],
+    npt.NDArray[float],
+    npt.NDArray[float],
+    list[list[str]],
+]:
     """Calculate expectation values for given data, observables and params.
 
     Args:
@@ -799,8 +852,16 @@ def calculate_extrapolated_expectation_values(
             PauliLindbladMap of a noise model learned upfront, or a result of a calibration circuit.
 
     Returns:
-        A tuple ``(exp_vals, stds, ensemble_stds)``, where ``exp_vals`` are expectation values,
-        ``stds`` are standard deviations, and ``ensemble_stds`` are ensemble standard errors.
+        A tuple ``(extrapolated_exp_vals, extrapolated_ensemble_stds, noise_factors_exp_vals,
+        noise_factors_ensemble_stds, noise_factors_stds, selected_extrapolators)``, where
+        ``extrapolated_exp_vals`` are expectation values evaluated at the extrapolated_noise_factors
+        points, ``extrapolated_ensemble_stds`` are ensemble standard errors evaluated at the
+        extrapolated_noise_factors points, ``noise_factors_exp_vals`` are expectation values
+        calculated at the noise_factors points, ``noise_factors_ensemble_stds`` are ensemble
+        standard errors calculated at the noise_factors points, ``noise_factors_stds`` are
+        standard errors calculated at the noise_factors points and ``selected_extrapolators`` are
+        the extrapolators are the valid extrapolators used to extrapolate the data for each
+        observable term.
 
     Raises:
         ValueError: If ``param_shape`` and ``observables.shape`` cannot be broadcasted against
@@ -824,9 +885,22 @@ def calculate_extrapolated_expectation_values(
         )
 
     # Compute expectation values for all observables
-    exp_vals = np.empty(shape=(len(extrapolated_noise_factors),) + output_shape, dtype=float)
-    stds = np.empty(shape=(len(extrapolated_noise_factors),) + output_shape, dtype=float)
-    ensemble_stds = np.empty(shape=(len(extrapolated_noise_factors),) + output_shape, dtype=float)
+    # Save the data for the extrapolated points (only exp_vals and ensamble_stds)
+    extrapolated_exp_vals = np.empty(
+        shape=(len(extrapolated_noise_factors),) + output_shape, dtype=float
+    )
+    extrapolated_ensemble_stds = np.empty(
+        shape=(len(extrapolated_noise_factors),) + output_shape, dtype=float
+    )
+    # Save also the data for all of the noise amplified points
+    noise_factors_exp_vals = np.zeros(shape=(len(noise_factors),) + output_shape, dtype=float)
+    noise_factors_ensemble_variance = np.zeros(
+        shape=(len(noise_factors),) + output_shape, dtype=float
+    )
+    noise_factors_twirl_variance = np.zeros(shape=(len(noise_factors),) + output_shape, dtype=float)
+    noise_factors_ensemble_stds = np.empty(shape=(len(noise_factors),) + output_shape, dtype=float)
+    noise_factors_twirl_stds = np.empty(shape=(len(noise_factors),) + output_shape, dtype=float)
+    # save for each extrapolated observable term the selected extrapolator
     selected_extrapolators = []
 
     # Loop over the broadcast output shape
@@ -849,7 +923,7 @@ def calculate_extrapolated_expectation_values(
         # each item should contain results for each point in extrapolated_noise_factors
         exp_vals_extrapolated = np.zeros(len(extrapolated_noise_factors), dtype=float)
         ensemble_var_extrapolated = np.zeros(len(extrapolated_noise_factors), dtype=float)
-        twirl_variance_extrapolated = np.zeros(len(extrapolated_noise_factors), dtype=float)
+
         selected_extrapolators_per_term = []
 
         for observable_term, coeff in observable.items():
@@ -859,9 +933,15 @@ def calculate_extrapolated_expectation_values(
             # Use identify_measure_basis to find the configuration index directly
             config_idx = identify_measure_basis(pauli_basis, param_basis_list)
 
+            # Calculate scale factor in case TREX mitigation is used
+            term_scale_factor = (
+                calculate_trex_factor(measure_noise_data, observable_term)
+                if measure_noise_data is not None
+                else 1
+            )
+
             noise_scaled_exp_vals = []
             noise_scaled_ensemble_std = []
-            non_amplified_twirl_var = 0.0
             for noise_factor_index in range(len(noise_factors)):
                 noise_factor_data = noise_amplified_data[noise_factor_index]
                 # Get measurement data for this configuration
@@ -872,8 +952,16 @@ def calculate_extrapolated_expectation_values(
                 )
                 noise_scaled_exp_vals.append(term_exp_val)
                 noise_scaled_ensemble_std.append(np.sqrt(term_ensemble_variance))
-                if noise_factors[noise_factor_index] in [1, 1.0]:
-                    non_amplified_twirl_var = term_twirl_variance
+
+                noise_factors_exp_vals[(noise_factor_index, *bcast_index)] += (
+                    coeff * term_exp_val * term_scale_factor
+                )
+                noise_factors_ensemble_variance[(noise_factor_index, *bcast_index)] += (
+                    (coeff**2) * term_ensemble_variance * term_scale_factor**2
+                )
+                noise_factors_twirl_variance[(noise_factor_index, *bcast_index)] += (
+                    (coeff**2) * term_twirl_variance * term_scale_factor**2
+                )
 
             extrap_exp_vals, extrap_stds, sel_extrapolators = (
                 process_extrapolated_expectation_values(
@@ -888,12 +976,6 @@ def calculate_extrapolated_expectation_values(
 
             selected_extrapolators_per_term.append(sel_extrapolators)
 
-            # Calculate scale factor in case TREX mitigation is used
-            term_scale_factor = (
-                calculate_trex_factor(measure_noise_data, observable_term)
-                if measure_noise_data is not None
-                else 1
-            )
             for extrap_index, (extrap_exp_val, extrap_std) in enumerate(
                 zip(extrap_exp_vals, extrap_stds)
             ):
@@ -904,19 +986,24 @@ def calculate_extrapolated_expectation_values(
                     ensemble_var_extrapolated[extrap_index] += (
                         (coeff**2) * (extrap_std**2) * (term_scale_factor**2)
                     )
-                twirl_variance_extrapolated[extrap_index] += (
-                    (coeff**2) * non_amplified_twirl_var * (term_scale_factor**2)
-                )
 
-        exp_vals[(slice(None), *bcast_index)] = exp_vals_extrapolated
-        ensemble_stds[(slice(None), *bcast_index)] = np.sqrt(ensemble_var_extrapolated)
-        # When twirling is off (num_randomizations=1), stds equals ensemble_standard_error
-        if num_randomizations == 1:
-            stds[(slice(None), *bcast_index)] = ensemble_stds[(slice(None), *bcast_index)]
-        else:
-            stds[(slice(None), *bcast_index)] = np.sqrt(
-                twirl_variance_extrapolated / num_randomizations
+        extrapolated_exp_vals[(slice(None), *bcast_index)] = exp_vals_extrapolated
+        extrapolated_ensemble_stds[(slice(None), *bcast_index)] = np.sqrt(ensemble_var_extrapolated)
+        for noise_factor_index in range(len(noise_factors)):
+            noise_factors_ensemble_stds[(noise_factor_index, *bcast_index)] = np.sqrt(
+                noise_factors_ensemble_variance[(noise_factor_index, *bcast_index)]
+            )
+            noise_factors_twirl_stds[(noise_factor_index, *bcast_index)] = np.sqrt(
+                noise_factors_twirl_variance[(noise_factor_index, *bcast_index)]
+                / num_randomizations
             )
         selected_extrapolators.append(selected_extrapolators_per_term)
 
-    return exp_vals, stds, ensemble_stds, selected_extrapolators
+    return (
+        extrapolated_exp_vals,
+        extrapolated_ensemble_stds,
+        noise_factors_exp_vals,
+        noise_factors_ensemble_stds,
+        noise_factors_twirl_stds,
+        selected_extrapolators,
+    )
