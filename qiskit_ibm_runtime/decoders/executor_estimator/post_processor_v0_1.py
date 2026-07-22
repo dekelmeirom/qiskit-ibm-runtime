@@ -562,8 +562,8 @@ def create_pub_result_pea(
     )
 
     data_bin = DataBin(
-        evs=extrapolated_exp_vals,
-        stds=extrapolated_ensemble_stds,
+        evs=extrapolated_exp_vals[0, ...],
+        stds=extrapolated_ensemble_stds[0, ...],
         evs_noise_factors=noise_factors_exp_vals,
         stds_noise_factors=noise_factors_stds,
         ensemble_stds_noise_factors=noise_factors_ensemble_stds,
@@ -720,8 +720,8 @@ def create_pub_result_zne(
     )
 
     data_bin = DataBin(
-        evs=extrapolated_exp_vals,
-        stds=extrapolated_ensemble_stds,
+        evs=extrapolated_exp_vals[0, ...],
+        stds=extrapolated_ensemble_stds[0, ...],
         evs_noise_factors=noise_factors_exp_vals,
         stds_noise_factors=noise_factors_stds,
         ensemble_stds_noise_factors=noise_factors_ensemble_stds,
