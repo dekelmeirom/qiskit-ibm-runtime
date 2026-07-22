@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Sequence  # noqa: TC003
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic.dataclasses import dataclass
 
 from .utils import PRIMITIVES_CONFIG
@@ -153,3 +153,16 @@ class ZneOptions:
     points at which the ``extrapolator``\s are evaluated to be returned in the data
     fields called ``evs_extrapolated`` and ``stds_extrapolated``.
     """
+
+    @field_validator("noise_factors", mode="plain")
+    @classmethod
+    def _validate_noise_factors(
+        cls, value: Sequence[Annotated[float, Field(ge=1)]] | Literal["auto"]
+    ) -> Sequence[Annotated[float, Field(ge=1)]] | Literal["auto"]:
+        if value == "auto":
+            return value
+        if len(value) < 2:
+            raise ValueError(
+                "Must have at least two noise factors in order to do an extrapolation."
+            )
+        return value

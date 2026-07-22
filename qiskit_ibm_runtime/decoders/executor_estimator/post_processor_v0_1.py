@@ -117,7 +117,7 @@ def estimator_v2_post_processor_v0_1(result: QuantumProgramResult) -> PrimitiveR
         res_step = len(zne_noise_factors)
 
     # Validate circuits_metadata length if provided
-    circuits_metadata = circuits_metadata or [None] * len(result)
+    circuits_metadata = circuits_metadata or [None] * len(result[::res_step])
     if {
         len(circuits_metadata),
         len(observables_lists),
