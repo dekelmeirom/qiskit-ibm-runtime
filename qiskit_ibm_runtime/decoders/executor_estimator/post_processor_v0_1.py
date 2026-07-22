@@ -560,10 +560,15 @@ def create_pub_result_pea(
         extrapolator,
         measure_noise_data,
     )
-    # TODO: add the noise_factors result data with the keywords as the legacy Estimator had
+
     data_bin = DataBin(
         evs=extrapolated_exp_vals,
-        ensemble_standard_error=extrapolated_ensemble_stds,
+        stds=extrapolated_ensemble_stds,
+        evs_noise_factors=noise_factors_exp_vals,
+        stds_noise_factors=noise_factors_stds,
+        ensemble_stds_noise_factors=noise_factors_ensemble_stds,
+        evs_extrapolated=extrapolated_exp_vals,
+        stds_extrapolated=extrapolated_ensemble_stds,
         shape=extrapolated_exp_vals.shape,
     )
     return EstimatorPubResult(data=data_bin)
@@ -714,10 +719,15 @@ def create_pub_result_zne(
         extrapolator,
         measure_noise_data,
     )
-    # TODO: add the noise_factors result data with the keywords as the legacy Estimator had
+
     data_bin = DataBin(
         evs=extrapolated_exp_vals,
-        ensemble_standard_error=extrapolated_ensemble_stds,
+        stds=extrapolated_ensemble_stds,
+        evs_noise_factors=noise_factors_exp_vals,
+        stds_noise_factors=noise_factors_stds,
+        ensemble_stds_noise_factors=noise_factors_ensemble_stds,
+        evs_extrapolated=extrapolated_exp_vals,
+        stds_extrapolated=extrapolated_ensemble_stds,
         shape=extrapolated_exp_vals.shape,
     )
     return EstimatorPubResult(data=data_bin)
