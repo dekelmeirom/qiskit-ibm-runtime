@@ -98,7 +98,7 @@ def prepare_zne(
 
     extrapolated_noise_factors = zne_options.extrapolated_noise_factors
     if extrapolated_noise_factors == "auto":
-        extrapolated_noise_factors = np.insert(noise_factors, 0, 0)
+        extrapolated_noise_factors = np.insert(noise_factors, 0, 0.0)
 
     if twirling_options.enable_gates or twirling_options.enable_measure:
         num_randomizations, shots_per_randomization = calculate_twirling_shots(
